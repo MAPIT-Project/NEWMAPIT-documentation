@@ -1,0 +1,7 @@
+# NEWMAPIT bevat de hoofdprojecten als geneste git repos
+MAP-IT_SA/
+webapp-ui/
+
+# Data dumps
+*.dump
+*.sql.gz
