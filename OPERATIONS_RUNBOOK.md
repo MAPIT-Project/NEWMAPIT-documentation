@@ -1,13 +1,13 @@
-# Operations- en incidentrunbook
+# Operations and incident runbook
 
-**Statusdatum:** 20 juli 2026  
-**Topologie:** het VPS-pad uit [DEPLOYMENT_RUNBOOK](DEPLOYMENT_RUNBOOK.md)  
+**Status date:** 20 July 2026  
+**Topology:** the VPS path from [DEPLOYMENT_RUNBOOK](DEPLOYMENT_RUNBOOK.md)  
 **Operations owner / on-call:** TBD  
-**Tijdzone voor runlogs:** UTC
+**Time zone for run logs:** UTC
 
-Dit document beschrijft de dagelijkse operatie en stelt initiële SLO-, backup- en DR-doelen voor. De repository bevat nog geen dashboards, alertmanager, scheduler, on-callrooster of bewijs van restore drills. Alles wat hieronder als “voorgesteld” is gemarkeerd, is dus een in te voeren control en geen bestaande garantie.
+This document describes daily operations and sets initial SLO, backup and DR targets. The repository does not yet contain dashboards, an alert manager, scheduler, on-call roster or evidence of restore drills. Everything marked "proposed" below is therefore a control to be introduced, not an existing guarantee.
 
-## 1. Dagelijkse startcheck
+## 1. Daily start check
 
 ```bash
 sudo systemctl is-active mapit-api nginx docker
@@ -20,47 +20,47 @@ curl --silent http://127.0.0.1:8000/api/health
 curl --silent http://127.0.0.1:3000/api/backend-status
 ```
 
-Lees bij de twee laatste calls ook de JSON-body. De full-healthroute retourneert niet automatisch HTTP 503 bij een `unhealthy` body; de frontendstatus meldt `connected` zodra HTTP bereikbaar is, ook wanneer `backend_status` degraded/unhealthy is.
+For the last two calls, also read the JSON body. The full health route does not automatically return HTTP 503 with an `unhealthy` body; the frontend status reports `connected` as soon as HTTP is reachable, even when `backend_status` is degraded/unhealthy.
 
-Controleer vervolgens:
+Then check:
 
-- fouten/restarts sinds de vorige dienst;
-- backupjobs en checksum/retentie;
-- schijf, inode, RAM/swap en containerstatus;
-- verlopen/bijna verlopen TLS-certificaten en providerquota;
-- dataversheid en mislukte ingest-/embeddingrunlogs;
-- open critical/high incidenten in [KNOWN_ISSUES_AND_RISKS](KNOWN_ISSUES_AND_RISKS.md).
+- errors/restarts since the previous shift;
+- backup jobs and checksum/retention;
+- disk, inodes, RAM/swap and container status;
+- expired/nearly expired TLS certificates and provider quotas;
+- data freshness and failed ingest/embedding run logs;
+- open critical/high incidents in [KNOWN_ISSUES_AND_RISKS](KNOWN_ISSUES_AND_RISKS.md).
 
 ## 2. Health endpoints
 
-| Endpoint | Werkelijke controle | Statussemantiek | Gebruik |
+| Endpoint | Actual check | Status semantics | Use |
 |---|---|---|---|
-| `GET /api/health/live` | Alleen FastAPI-proces/event loop antwoordt. | Altijd 200 met `alive: true` zolang handler draait. | Liveness, iedere 30 s. |
-| `GET /api/health/ready` | PostgreSQL; Gemini alleen als een Gemini-key is gezet. | 200 wanneer ready, 503 bij een falende kritieke check. | Load-balancer/readiness, iedere 30 s. |
-| `GET /api/health` en `/api/health/` | PostgreSQL, Neo4j, Redis, Gemini, embeddingservice en Supabase parallel. | Body `healthy`, `degraded` of `unhealthy`; handler zet zelf geen 503. Redis/embedding zijn niet-kritiek, PostgreSQL en geconfigureerde Gemini wel. | Synthetische dependencycheck, iedere 2 min. |
-| `GET /api/health/dependencies` | Dezelfde dependencies plus critical/fallbacklabels en configuratiesamenvatting. | JSON, geen beloofde non-200 bij degradatie. | Diagnose, niet publiek exposen. |
-| `GET /api/health/metrics` | PostgreSQL, Neo4j en Redisstatus/latency. | JSON met 1/0,5/0, **geen Prometheus exposition format**. | Interne JSON-scrape/exporter. |
-| `GET /api/analytics/health` | In-memory analyticsservice, buffer en last flush. | `healthy` of `disabled`; endpoint is momenteel niet geauthenticeerd. | Interne diagnose; blokkeer extern. |
-| `GET /api/alerts/health` | Saved-searchservice. | Eenvoudige servicehealth. | Interne diagnose; blokkeer extern. |
-| `GET /api/v4/proposal-session/health` | Bedoeld voor session manager, proposal agent en database. | In bron gedeclareerd, maar wordt waarschijnlijk door eerdere `GET /{session_id}` gematcht en kan 404 opleveren. | Niet als probe gebruiken tot routevolgorde is hersteld en getest. |
-| `GET /api/backend-status` op SvelteKit | SvelteKit haalt FastAPI `/api/health` op. | 200 `connected` bij bereikbare response; 503 alleen bij fetchfout. | End-to-end proxybereikbaarheid, JSON-body beoordelen. |
+| `GET /api/health/live` | Only the FastAPI process/event loop responds. | Always 200 with `alive: true` as long as the handler runs. | Liveness, every 30 s. |
+| `GET /api/health/ready` | PostgreSQL; Gemini only if a Gemini key is set. | 200 when ready, 503 on a failing critical check. | Load balancer/readiness, every 30 s. |
+| `GET /api/health` and `/api/health/` | PostgreSQL, Neo4j, Redis, Gemini, embedding service and Supabase in parallel. | Body `healthy`, `degraded` or `unhealthy`; handler does not set 503 itself. Redis/embedding are non-critical, PostgreSQL and configured Gemini are. | Synthetic dependency check, every 2 min. |
+| `GET /api/health/dependencies` | The same dependencies plus critical/fallback labels and configuration summary. | JSON, no promised non-200 on degradation. | Diagnosis, do not expose publicly. |
+| `GET /api/health/metrics` | PostgreSQL, Neo4j and Redis status/latency. | JSON with 1/0, 5/0, **no Prometheus exposition format**. | Internal JSON scrape/exporter. |
+| `GET /api/analytics/health` | In-memory analytics service, buffer and last flush. | `healthy` or `disabled`; endpoint is currently not authenticated. | Internal diagnosis; block externally. |
+| `GET /api/alerts/health` | Saved-search service. | Simple service health. | Internal diagnosis; block externally. |
+| `GET /api/v4/proposal-session/health` | Intended for session manager, proposal agent and database. | Declared in source, but probably matched by the earlier `GET /{session_id}` and may yield 404. | Do not use as a probe until route order is fixed and tested. |
+| `GET /api/backend-status` on SvelteKit | SvelteKit fetches FastAPI `/api/health`. | 200 `connected` on a reachable response; 503 only on fetch error. | End-to-end proxy reachability, assess the JSON body. |
 
-OpenAPI is beschikbaar op backend `/docs`, `/redoc` en `/openapi.json`, maar moet in productie achter beheertoegang of uitgeschakeld worden.
+OpenAPI is available on the backend `/docs`, `/redoc` and `/openapi.json`, but in production must be placed behind admin access or disabled.
 
-## 3. Logs en diagnose
+## 3. Logs and diagnosis
 
-De applicaties configureren standaard logging naar stdout/stderr; er is geen applicatie-`FileHandler` of centrale logcollector in de code.
+The applications configure logging to stdout/stderr by default; there is no application `FileHandler` or central log collector in the code.
 
-| Component | Locatie/commando | Opmerking |
+| Component | Location/command | Note |
 |---|---|---|
-| FastAPI/systemd | `journalctl -u mapit-api --since -1h` | Voeg `-f` toe voor follow; journaldretentie is OS-configuratie. |
-| SvelteKit/PM2 | `pm2 logs mapit-ui --lines 200` | PM2-bestanden staan standaard onder de home van de PM2-user in `.pm2/logs/`; gebruik het commando als canonieke toegang. |
-| Redis/Neo4j | `docker compose --env-file /etc/mapit/backend.env -p mapit logs --since 1h redis neo4j` | Neo4j heeft daarnaast een named `neo4j_logs`-volume; beheer via container/Compose. |
-| NGINX | `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | Zorg voor logrotate en maskering van tokens/querydata. |
-| Supabase managed | Projectdashboard/log explorer van de provider | Toegang en retentie buiten deze repo beheren. |
-| Deploy/ingest/backup | Nog te maken centraal runlog | Noteer commandoversie, SHA, data-artifactchecksum, start/einde, counts en operator. |
+| FastAPI/systemd | `journalctl -u mapit-api --since -1h` | Add `-f` for follow; journald retention is OS configuration. |
+| SvelteKit/PM2 | `pm2 logs mapit-ui --lines 200` | PM2 files are by default under the PM2 user's home in `.pm2/logs/`; use the command as canonical access. |
+| Redis/Neo4j | `docker compose --env-file /etc/mapit/backend.env -p mapit logs --since 1h redis neo4j` | Neo4j additionally has a named `neo4j_logs` volume; manage via container/Compose. |
+| NGINX | `/var/log/nginx/access.log`, `/var/log/nginx/error.log` | Ensure log rotation and masking of tokens/query data. |
+| Supabase managed | Provider project dashboard/log explorer | Manage access and retention outside this repo. |
+| Deploy/ingest/backup | Central run log still to be created | Record command version, SHA, data artifact checksum, start/end, counts and operator. |
 
-Veilige triage:
+Safe triage:
 
 ```bash
 journalctl -u mapit-api --since -30min --no-pager
@@ -73,86 +73,86 @@ sudo nginx -t
 sudo tail -n 100 /var/log/nginx/error.log
 ```
 
-Log geen JWT's, cookies, service-rolekeys, volledige prompts met persoonsgegevens of database-URL's. Een aangetroffen secret geldt als securityincident: toegang intrekken/roteren en bereik bepalen.
+Do not log JWTs, cookies, service-role keys, full prompts with personal data or database URLs. A discovered secret counts as a security incident: revoke/rotate access and determine scope.
 
-## 4. Metrics en analytics
+## 4. Metrics and analytics
 
-Aanwezige telemetry:
+Available telemetry:
 
-- `/api/analytics/overview?days=30`: usage, performance, content, proposals en feedback uit PostgreSQL;
-- `/api/analytics/tools?hours=24`: toolperformance, trage tools, combinaties en process-local sessiemetrics;
-- `/api/analytics/trends`, `/queries/popular`: tijdreeksen en populaire queries;
+- `/api/analytics/overview?days=30`: usage, performance, content, proposals and feedback from PostgreSQL;
+- `/api/analytics/tools?hours=24`: tool performance, slow tools, combinations and process-local session metrics;
+- `/api/analytics/trends`, `/queries/popular`: time series and popular queries;
 - V3 `/api/v3/conversation/analytics/summary`, `/low-confidence`, `/search`, `/export`;
-- `tool_usage_analytics`, `tool_combination_analytics`, `conversation_analytics` en `response_feedback` in PostgreSQL;
-- request-ID en timing via backendmiddleware;
-- JSON dependencylatencies via `/api/health/metrics`.
+- `tool_usage_analytics`, `tool_combination_analytics`, `conversation_analytics` and `response_feedback` in PostgreSQL;
+- request ID and timing via backend middleware;
+- JSON dependency latencies via `/api/health/metrics`.
 
-Beperkingen:
+Limitations:
 
-- analytics kan bij databasefouten stil als `disabled` initialiseren;
-- toolanalytics buffert tot 50 events of circa 60 seconden in process memory; een crash kan bufferdata verliezen;
-- process-local sessiemetrics worden niet tussen Uvicornworkers gedeeld;
-- analytics- en exportendpoints hebben geen backend-auth; publiceer ze niet;
-- er is geen echte `/metrics`-route en geen Prometheus/Grafana-config in de repo.
+- analytics can silently initialise as `disabled` on database errors;
+- tool analytics buffers up to 50 events or approximately 60 seconds in process memory; a crash can lose buffer data;
+- process-local session metrics are not shared between Uvicorn workers;
+- analytics and export endpoints have no backend auth; do not publish them;
+- there is no real `/metrics` route and no Prometheus/Grafana configuration in the repo.
 
-Voorgestelde minimumdashboardpanelen: requestvolume/status/latency, SSE-start en streamduur, active streams, providerfouten/429/timeouts, tool success/latency, PostgreSQL connecties/querylatency, Redis memory/evictions, Neo4j nodes/relationships/querylatency, container/processrestarts, disk/inodes, backupouderdom en data-/embeddingversheid.
+Proposed minimum dashboard panels: request volume/status/latency, SSE start and stream duration, active streams, provider errors/429/timeouts, tool success/latency, PostgreSQL connections/query latency, Redis memory/evictions, Neo4j nodes/relationships/query latency, container/process restarts, disk/inodes, backup age and data/embedding freshness.
 
 ## 5. Alerts
 
-Voorgestelde alerts; pas drempels na 30 dagen baseline aan.
+Proposed alerts; adjust thresholds after 30 days of baseline.
 
-| Alert | Initiële drempel | Urgentie |
+| Alert | Initial threshold | Urgency |
 |---|---|---|
-| Liveness faalt | 2 opeenvolgende checks | P1 |
-| Readiness faalt | 3 checks / 2 minuten | P1 |
-| Full health `unhealthy` | 2 checks; PostgreSQL/Supabase direct | P1 |
-| Full health `degraded` | 10 minuten | P2 |
-| HTTP 5xx | >2% gedurende 5 minuten en minimaal 20 requests | P1/P2 op impact |
-| SSE-startlatency | p95 >5 s gedurende 15 minuten | P2 |
-| Provider 429/timeouts | >5% gedurende 10 minuten | P2; P1 als alle providers uitvallen |
-| Tool failures | >10% per veelgebruikte tool in 15 minuten | P2 |
-| Redis/Neo4j down | >5 minuten | P2 zolang fallback werkt, anders P1 |
-| Databaseconnecties | >80% van limiet gedurende 10 minuten | P2 |
+| Liveness fails | 2 consecutive checks | P1 |
+| Readiness fails | 3 checks / 2 minutes | P1 |
+| Full health `unhealthy` | 2 checks; PostgreSQL/Supabase immediately | P1 |
+| Full health `degraded` | 10 minutes | P2 |
+| HTTP 5xx | >2% for 5 minutes and at least 20 requests | P1/P2 by impact |
+| SSE start latency | p95 >5 s for 15 minutes | P2 |
+| Provider 429/timeouts | >5% for 10 minutes | P2; P1 if all providers fail |
+| Tool failures | >10% per frequently used tool in 15 minutes | P2 |
+| Redis/Neo4j down | >5 minutes | P2 as long as fallback works, otherwise P1 |
+| Database connections | >80% of limit for 10 minutes | P2 |
 | Disk/inodes | >80% warning, >90% critical | P2/P1 |
-| Process/container restart | >3 in 10 minuten | P1 |
-| Backup | laatste succesvolle PostgreSQL-backup >26 uur; checksum/verify faalt direct | P1 |
-| Data freshness | afgesproken dataset-SLA overschreden | P2 |
-| TLS | <21 dagen tot expiratie; renewaltest faalt | P2/P1 |
+| Process/container restart | >3 in 10 minutes | P1 |
+| Backup | last successful PostgreSQL backup >26 hours; checksum/verify fails immediately | P1 |
+| Data freshness | agreed dataset SLA exceeded | P2 |
+| TLS | <21 days until expiry; renewal test fails | P2/P1 |
 
-Alerts moeten naar een bemand kanaal met acknowledgement, runbooklink en escalatie. Eigenaar/kanaal zijn momenteel **TBD**; dit is zelf een releaseblocker.
+Alerts must go to a staffed channel with acknowledgement, runbook link and escalation. Owner/channel are currently **TBD**; this is itself a release blocker.
 
-## 6. Voorgestelde SLO's
+## 6. Proposed SLOs
 
-Deze doelen zijn nog niet gemeten of contractueel toegezegd.
+These targets have not yet been measured or contractually committed.
 
-| SLI | Voorgesteld SLO per kalendermaand |
+| SLI | Proposed SLO per calendar month |
 |---|---:|
-| Publieke webapp + login beschikbaar | 99,5% |
-| FastAPI readiness | 99,5% |
-| Succesvolle niet-streaming API-requests (geen 4xx) | 99,0% |
-| V3-streams die een eerste SSE-event starten | 95% binnen 5 s; 99% binnen 15 s |
-| V3-streams met `complete` zonder `error` | 98% |
-| Kritieke databasewrites | 99,9% zonder verlies/duplicatie |
-| Datafreshness | volgens de per-dataset-SLA hieronder |
+| Public web app + login available | 99.5% |
+| FastAPI readiness | 99.5% |
+| Successful non-streaming API requests (no 4xx) | 99.0% |
+| V3 streams that start a first SSE event | 95% within 5 s; 99% within 15 s |
+| V3 streams with `complete` without `error` | 98% |
+| Critical database writes | 99.9% without loss/duplication |
+| Data freshness | according to the per-dataset SLA below |
 
-Planned maintenance telt alleen buiten de beschikbaarheids-SLI wanneer vooraf aangekondigd en afzonderlijk gemeten. Externe providerfouten mogen in rapportage apart worden uitgesplitst, maar gebruikersimpact blijft zichtbaar.
+Planned maintenance only counts outside the availability SLI when announced in advance and measured separately. External provider errors may be broken out separately in reporting, but user impact remains visible.
 
 ## 7. Backups
 
-### Beleid en retentie (voorgesteld)
+### Policy and retention (proposed)
 
-| Store | Frequentie | Retentie | RPO-doel | Autoriteit |
+| Store | Frequency | Retention | RPO target | Authority |
 |---|---|---|---|---|
-| PostgreSQL/Supabase | Provider-PITR indien beschikbaar + dagelijkse logische dump | 7 dagelijks, 5 wekelijks, 12 maandelijks | 1 uur met PITR, anders 24 uur | Primair voor app/auth/content/analytics. |
-| Neo4j | Dagelijkse offline dump na PostgreSQL-backup | 7 dagelijks, 5 wekelijks | 24 uur | Afgeleide graphdata, maar raw bron ontbreekt nu deels; backup dus noodzakelijk. |
-| Redis | Dagelijkse RDB/AOF-kopie voor diagnose; niet als primaire recoverybron | 2 dagen | maximaal 24 uur, maar sessies/cache mogen verloren gaan | Cache/short-term state, niet source of truth. |
-| Config/secrets | Versleutelde secret-storeversies bij iedere wijziging | Minimaal 12 maanden audittrail | Laatste geldige versie | Geen plaintext secrets in Git/backupbundel. |
+| PostgreSQL/Supabase | Provider PITR if available + daily logical dump | 7 daily, 5 weekly, 12 monthly | 1 hour with PITR, otherwise 24 hours | Primary for app/auth/content/analytics. |
+| Neo4j | Daily offline dump after the PostgreSQL backup | 7 daily, 5 weekly | 24 hours | Derived graph data, but the raw source is now partly missing; backup therefore necessary. |
+| Redis | Daily RDB/AOF copy for diagnosis; not as a primary recovery source | 2 days | maximum 24 hours, but sessions/cache may be lost | Cache/short-term state, not source of truth. |
+| Config/secrets | Encrypted secret-store versions on every change | At least 12 months audit trail | Last valid version | No plaintext secrets in Git/backup bundle. |
 
-Versleutel backups client-side of in de backupdienst, sla ze buiten de VPS/accountfailure-domain op, beperk toegang, maak SHA-256-checksums en test restores per kwartaal.
+Encrypt backups client-side or in the backup service, store them outside the VPS/account failure domain, restrict access, create SHA-256 checksums and test restores quarterly.
 
 ### PostgreSQL
 
-Gebruik bij managed Supabase eerst provider-PITR/snapshots. Aanvullende logische dump:
+For managed Supabase, use provider PITR/snapshots first. Additional logical dump:
 
 ```bash
 install -d -m 0700 /srv/mapit/backups/postgres
@@ -166,11 +166,11 @@ sha256sum /srv/mapit/backups/postgres/mapit-*.dump \
   > /srv/mapit/backups/postgres/SHA256SUMS.latest
 ```
 
-Gebruik een dedicated backuprol met voldoende leesrechten; leg vast welke Supabase auth/storageobjecten de providerbackup dekt. Controleer dump met `pg_restore --list <bestand>` en kopieer daarna naar immutable/off-site storage.
+Use a dedicated backup role with sufficient read rights; record which Supabase auth/storage objects the provider backup covers. Check the dump with `pg_restore --list <file>` and then copy it to immutable/off-site storage.
 
 ### Neo4j
 
-Neo4j Community 5.22 gebruikt een offline dump. Dit veroorzaakt een kort onderhoudsvenster:
+Neo4j Community 5.22 uses an offline dump. This causes a short maintenance window:
 
 ```bash
 cd /srv/mapit/current/backend
@@ -185,11 +185,11 @@ sha256sum /srv/mapit/backups/neo4j/neo4j.dump \
   > /srv/mapit/backups/neo4j/neo4j.dump.sha256
 ```
 
-Als `/backups` niet schrijfbaar is, bepaal eerst de container-UID met `docker compose --env-file /etc/mapit/backend.env -p mapit run --rm --no-deps neo4j id` en geef alleen die UID schrijfrecht. Verander niet willekeurig permissies op `neo4j_data`.
+If `/backups` is not writable, first determine the container UID with `docker compose --env-file /etc/mapit/backend.env -p mapit run --rm --no-deps neo4j id` and give only that UID write permission. Do not arbitrarily change permissions on `neo4j_data`.
 
 ### Redis
 
-Compose zet AOF aan. Maak daarnaast een synchrone RDB-snapshot met `redis-cli --rdb`:
+Compose enables AOF. Additionally create a synchronous RDB snapshot with `redis-cli --rdb`:
 
 ```bash
 cd /srv/mapit/current/backend
@@ -204,23 +204,23 @@ sha256sum /srv/mapit/backups/redis/dump.rdb \
   > /srv/mapit/backups/redis/dump.rdb.sha256
 ```
 
-Omdat Redis cache en tijdelijke conversation state bevat, is leeg starten doorgaans veiliger dan oude state terugzetten.
+Because Redis contains cache and temporary conversation state, starting empty is usually safer than restoring old state.
 
-## 8. Restore en kwartaaltest
+## 8. Restore and quarterly test
 
-Restore nooit voor het eerst tijdens een incident. Gebruik een geïsoleerde restoreomgeving met dezelfde PostgreSQL/pgvector-, Neo4j- en Redis-majorversies.
+Never restore for the first time during an incident. Use an isolated restore environment with the same PostgreSQL/pgvector, Neo4j and Redis major versions.
 
-### PostgreSQL restoretest
+### PostgreSQL restore test
 
 ```bash
 sha256sum --check /srv/mapit/backups/postgres/SHA256SUMS.latest
 pg_restore --no-owner --no-acl --exit-on-error \
-  --dbname="$RESTORE_DATABASE_URL" /pad/naar/mapit-UTC.dump
+  --dbname="$RESTORE_DATABASE_URL" /path/to/mapit-UTC.dump
 ```
 
-Maak het lege doelproject/de doeldatabase via de provider en gebruik daarna `pg_restore --dbname="$RESTORE_DATABASE_URL"`. Controleer tabellen/counts, RLS/publications/functions, vectorafmetingen, login en V3/V4-smoke met de queries uit [DATABASE_SCHEMA](MAP-IT_SA/docs/DATABASE_SCHEMA.md). Voor managed Supabase-auth/storage kan providerrestore nodig zijn naast een public-schema-dump.
+Create the empty target project/database via the provider and then use `pg_restore --dbname="$RESTORE_DATABASE_URL"`. Check tables/counts, RLS/publications/functions, vector dimensions, login and V3/V4 smoke with the queries from [DATABASE_SCHEMA](MAP-IT_SA/docs/DATABASE_SCHEMA.md). For managed Supabase auth/storage, a provider restore may be needed in addition to a public-schema dump.
 
-### Neo4j restoretest
+### Neo4j restore test
 
 ```bash
 cd /srv/mapit/restore/backend
@@ -233,11 +233,11 @@ docker compose --env-file /etc/mapit/backend.env -p mapit-restore run --rm --no-
 docker compose --env-file /etc/mapit/backend.env -p mapit-restore up -d neo4j
 ```
 
-Voer dit op een afzonderlijke restorehost uit, of override de hostpoorten zodat zij niet met productie botsen. Verifieer verbinding, node-/relationshipcounts en representatieve graphquery. Als de graph aantoonbaar volledig afgeleid kan worden, is heringest vanuit geverifieerde raw artifacts een alternatief; momenteel ontbreken sommige artifacts, dus vertrouw daar niet zonder manifest op.
+Run this on a separate restore host, or override the host ports so they do not conflict with production. Verify connection, node/relationship counts and a representative graph query. If the graph is demonstrably fully derivable, re-ingest from verified raw artifacts is an alternative; some artifacts are currently missing, so do not rely on that without a manifest.
 
-### Redis restoretest
+### Redis restore test
 
-Voorkeursherstel is een **lege Redis**: stop API, maak een kopie van het bestaande volume, start Redis leeg en accepteer cache/sessionverlies. Test een RDB eerst geïsoleerd:
+Preferred recovery is an **empty Redis**: stop the API, make a copy of the existing volume, start Redis empty and accept cache/session loss. Test an RDB in isolation first:
 
 ```bash
 sha256sum --check /srv/mapit/backups/redis/dump.rdb.sha256
@@ -255,109 +255,109 @@ redis-cli -p 26379 ping
 redis-cli -p 26379 dbsize
 ```
 
-Controleer representatieve keys en TTL's en verwijder daarna de tijdelijke container/volume volgens het lokale changeproces. Alleen als tijdelijke state echt moet worden teruggezet: zet FastAPI en productie-Redis uit, maak een tweede kopie van `mapit_redis_data`, leeg uitsluitend dat gevalideerde volume en plaats de gecontroleerde `dump.rdb` zoals hierboven. Dit is een destructieve productiehandeling en vereist expliciete changegoedkeuring; overschrijf het actieve volume nooit tijdens normaal verkeer.
+Check representative keys and TTLs and then remove the temporary container/volume according to the local change process. Only if temporary state genuinely must be restored: shut down FastAPI and production Redis, make a second copy of `mapit_redis_data`, empty only that validated volume and place the checked `dump.rdb` as above. This is a destructive production action and requires explicit change approval; never overwrite the active volume during normal traffic.
 
-### Restore-acceptatie
+### Restore acceptance
 
-- backupchecksum geldig en artifact decryptbaar;
-- restorecommand exit 0 en geen onverwachte warnings;
-- schema/counts/vectorafmetingen conform databaseguide;
-- Supabase login, RLS-negatietest en Realtime werken;
-- Neo4j counts/representatieve relaties kloppen;
-- V3 chat, persistence en V4 session smoke slagen;
-- gemeten RPO/RTO, operator en afwijkingen in restorelog;
-- productiebackup blijft onaangeroerd.
+- backup checksum valid and artifact decryptable;
+- restore command exit 0 and no unexpected warnings;
+- schema/counts/vector dimensions conform to the database guide;
+- Supabase login, RLS negative test and Realtime work;
+- Neo4j counts/representative relationships are correct;
+- V3 chat, persistence and V4 session smoke pass;
+- measured RPO/RTO, operator and deviations in the restore log;
+- production backup remains untouched.
 
-## 9. Scheduled jobs en datafreshness
+## 9. Scheduled jobs and data freshness
 
-### Werkelijke huidige staat
+### Actual current state
 
-Er is **geen werkende schedulerconfiguratie** in de repository. Celery worker/beat verwijzen naar een niet-bestaand `app.services.celery_app`. De volgende functies zijn alleen handmatig of on-demand:
+There is **no working scheduler configuration** in the repository. Celery worker/beat refer to a non-existent `app.services.celery_app`. The following functions are manual or on-demand only:
 
-| Functie | Huidige trigger | Huidige freshnessgarantie |
+| Function | Current trigger | Current freshness guarantee |
 |---|---|---|
-| Funding-call detail enrichment | On-demand door service/tool; cache-TTL default 3600 s | Cache kan na een uur verversen, maar dit is geen volledige callsync. |
-| `sync_topics_from_projects.py` | Handmatig script | Geen schema/cadans vastgelegd. |
-| Document- en programme-ingest | Handmatige scripts | Geen automatische freshness-SLA. |
-| Project/chunk/call embeddings | Handmatige generate/re-embed scripts | Geen automatische drift- of freshnessgarantie. |
-| Saved-searchalerts | Handmatig `POST /api/alerts/process-alerts`; bedoeld voor niet-bestaande Celery task | Geen betrouwbare verwerking; e-mailintegratie heeft TODO. |
-| Analytics flush | Tijdens requests, buffer 50 events of circa 60 s | Kan bij procescrash verliezen. |
+| Funding-call detail enrichment | On demand by service/tool; cache TTL default 3600 s | Cache can refresh after an hour, but this is not a full call sync. |
+| `sync_topics_from_projects.py` | Manual script | No schema/cadence recorded. |
+| Document and programme ingest | Manual scripts | No automatic freshness SLA. |
+| Project/chunk/call embeddings | Manual generate/re-embed scripts | No automatic drift or freshness guarantee. |
+| Saved-search alerts | Manual `POST /api/alerts/process-alerts`; intended for a non-existent Celery task | No reliable processing; email integration has a TODO. |
+| Analytics flush | During requests, buffer of 50 events or approximately 60 s | Can lose data on process crash. |
 
-Publiceer `process-alerts` niet als unauthenticated cron-URL. Voeg eerst service-auth, idempotentie/locking, timeout, retries, metrics en auditlogging toe.
+Do not publish `process-alerts` as an unauthenticated cron URL. First add service auth, idempotency/locking, timeout, retries, metrics and audit logging.
 
-### Voorgestelde cadans na implementatie
+### Proposed cadence after implementation
 
-| Job | Cadans | Freshness-SLA |
+| Job | Cadence | Freshness SLA |
 |---|---|---|
-| Open/upcoming funding calls sync | Dagelijks 02:00 UTC; extra run na bronrelease | <26 uur |
-| Deadline/status normalization | Iedere 6 uur | <8 uur |
-| Document/programme guide ingest | Wekelijks en event-driven bij nieuwe guide | <8 dagen, kritieke regelwijziging <48 uur |
-| Incremental embeddings | Na elke succesvolle ingest, anders dagelijks | <30 uur na brondatamutatie |
-| Neo4j afgeleide graphrebuild/increment | Na projectbatch, minimaal wekelijks | <8 dagen |
-| Saved-search daily/weekly | Volgens gebruikersfrequentie | daily <26 uur; weekly <8 dagen |
-| Quality scenario sample | Nachtelijk op staging; volledig voor release | Resultaat <24 uur / releasegebonden |
+| Open/upcoming funding calls sync | Daily 02:00 UTC; extra run after source release | <26 hours |
+| Deadline/status normalization | Every 6 hours | <8 hours |
+| Document/programme guide ingest | Weekly and event-driven on new guides | <8 days, critical rule change <48 hours |
+| Incremental embeddings | After every successful ingest, otherwise daily | <30 hours after source data change |
+| Neo4j derived graph rebuild/increment | After project batch, at minimum weekly | <8 days |
+| Saved-search daily/weekly | According to user frequency | daily <26 hours; weekly <8 days |
+| Quality scenario sample | Nightly on staging; full for release | Result <24 hours / release-bound |
 
-Iedere job schrijft een runrecord met code-SHA, inputversie/checksum, start/einde, inserted/updated/skipped/failed counts en volgende retry. Geen overlap: gebruik distributed lock en unieke run-ID.
+Every job writes a run record with code SHA, input version/checksum, start/end, inserted/updated/skipped/failed counts and next retry. No overlap: use a distributed lock and a unique run ID.
 
-## 10. Capacity en grenzen
+## 10. Capacity and limits
 
-| Onderdeel | Geconfigureerde/gekende grens | Operationele actie |
+| Component | Configured/known limit | Operational action |
 |---|---|---|
-| PostgreSQL pool | Backenddefault 5–50; analytics extra pools tot 5 per proces | Tel over alle Uvicornworkers; alert voor providerlimiet. |
-| Supabase REST | `max_rows=1000` lokaal | Pagineer; geen volledige exports via één REST-call. |
-| Neo4j | Compose: heap 512 MiB–2 GiB, page cache 512 MiB, single Community node | Monitor heap/page cache/disk; geen HA. |
-| Redis | Single `redis:7-alpine`, AOF, geen auth/TLS op loopback | Alleen intern binden/firewall; monitor memory/evictions. |
-| API | VPS-runbook start 2 Uvicornworkers; geen bewezen loadbaseline | Loadtest staging vóór verhogen; deel state via Redis. |
-| SSE/NGINX | Proxy read/send timeout voorgesteld 600 s | Alert op hangende streams; test disconnect/cancel. |
-| Upload | Frontend 10 MiB, backend 50 MiB, NGINX-runbook 10 MiB | 10 MiB is effectieve ondersteunde limiet. |
-| Vector | Doel 3072; snapshot deels 768; geen ANN-index voor >2000 in migratie `002` | Houd model/schema/data gelijk; monitor sequential-scanlatency. |
-| Rate limit | App-global uit; runbook stelt NGINX 20 r/s per IP voor | Geen per-user/cost-aware/distributed bescherming; nog securityblocker. |
-| Providerquota | Niet in repo vastgelegd | Leg quota/budget per provider vast en alert op 429/kosten. |
+| PostgreSQL pool | Backend default 5–50; analytics extra pools up to 5 per process | Count across all Uvicorn workers; alert for the provider limit. |
+| Supabase REST | `max_rows=1000` locally | Paginate; no full exports via a single REST call. |
+| Neo4j | Compose: heap 512 MiB–2 GiB, page cache 512 MiB, single Community node | Monitor heap/page cache/disk; no HA. |
+| Redis | Single `redis:7-alpine`, AOF, no auth/TLS on loopback | Bind internally/firewall only; monitor memory/evictions. |
+| API | VPS runbook starts 2 Uvicorn workers; no proven load baseline | Load test staging before scaling; share state via Redis. |
+| SSE/NGINX | Proxy read/send timeout proposed 600 s | Alert on hanging streams; test disconnect/cancel. |
+| Upload | Frontend 10 MiB, backend 50 MiB, NGINX runbook 10 MiB | 10 MiB is the effective supported limit. |
+| Vector | Target 3072; snapshot partly 768; no ANN index for >2000 in migration `002` | Keep model/schema/data aligned; monitor sequential scan latency. |
+| Rate limit | App-global off; runbook proposes NGINX 20 r/s per IP | No per-user/cost-aware/distributed protection; still a security blocker. |
+| Provider quotas | Not recorded in the repo | Record quotas/budgets per provider and alert on 429/costs. |
 
 ## 11. Incident response
 
-| Niveau | Definitie | Eerste reactie | Escalatie |
+| Level | Definition | Initial response | Escalation |
 |---|---|---:|---|
-| P0 | Bevestigde secret/service-role exposure, cross-tenant datalek, destructief dataverlies of actieve compromise | 15 min | Incident commander + security + data owner onmiddellijk; autoriteiten/klanten volgens beleid. |
-| P1 | Volledige uitval, login/database onbeschikbaar, brede foutieve antwoorden of RPO/RTO in gevaar | 15 min | On-call → service owner na 15 min; management na 30 min. |
-| P2 | Degradatie met workaround, één datastore/provider/tool uit, data te oud | 1 uur | Service owner dezelfde werkdag. |
-| P3 | Kleine bug/onderhoudsprobleem zonder directe gebruikersimpact | Volgende werkdag | Backlog met owner/target. |
+| P0 | Confirmed secret/service-role exposure, cross-tenant data leak, destructive data loss or active compromise | 15 min | Incident commander + security + data owner immediately; authorities/customers per policy. |
+| P1 | Full outage, login/database unavailable, broadly incorrect answers or RPO/RTO at risk | 15 min | On-call → service owner after 15 min; management after 30 min. |
+| P2 | Degradation with workaround, one datastore/provider/tool down, data too old | 1 hour | Service owner the same working day. |
+| P3 | Small bug/maintenance issue without direct user impact | Next working day | Backlog with owner/target. |
 
-Contactnamen, telefoon, kanaal, DPO/security en management zijn **TBD** en moeten vóór productie buiten dit publieke document in het on-callregister staan.
+Contact names, phone, channel, DPO/security and management are **TBD** and must be recorded in the on-call register outside this public document before production.
 
-Standaardprocedure:
+Standard procedure:
 
-1. Acknowledge, benoem incident commander/scribe en noteer UTC-tijd.
-2. Classificeer gebruikers-, data-, security- en compliance-impact; bewaar bewijs.
-3. Beperk schade: verkeer stoppen, feature uit, provider/key intrekken of vorige release activeren.
-4. Diagnoseer read-only met health, logs, release-SHA, schema/data-/providerstatus.
-5. Herstel via bekende rollback/restore; vermijd ad-hoc productiedata-edits.
-6. Valideer met twee gebruikers, RLS-negatietest en kernsmokes.
-7. Communiceer status/cadans; security/privacy via formeel proces.
-8. Sluit alleen na monitoringstabiliteit; postmortem binnen 5 werkdagen voor P0/P1.
+1. Acknowledge, designate incident commander/scribe and record the UTC time.
+2. Classify user, data, security and compliance impact; preserve evidence.
+3. Limit damage: stop traffic, disable a feature, revoke provider/key or activate the previous release.
+4. Diagnose read-only with health, logs, release SHA, schema/data/provider status.
+5. Recover via known rollback/restore; avoid ad-hoc production data edits.
+6. Validate with two users, an RLS negative test and core smokes.
+7. Communicate status/cadence; security/privacy via a formal process.
+8. Close only after monitoring stability; postmortem within 5 working days for P0/P1.
 
 ## 12. Disaster recovery
 
-Voorgestelde doelen:
+Proposed targets:
 
 | Scenario | RPO | RTO |
 |---|---:|---:|
-| PostgreSQL/Supabase met PITR | 1 uur | 4 uur |
-| Zonder PITR | 24 uur | 8 uur |
-| Neo4j | 24 uur | 8 uur; sneller als betrouwbare heringest mogelijk is |
-| Redis | Best effort / 24 uur | 1 uur; cache/sessionverlies geaccepteerd |
-| Volledige VPS-regio/accountfailure | Volgens traagste primaire store | 8 uur na beschikbare nieuwe VPS/DNS |
+| PostgreSQL/Supabase with PITR | 1 hour | 4 hours |
+| Without PITR | 24 hours | 8 hours |
+| Neo4j | 24 hours | 8 hours; faster if reliable re-ingest is possible |
+| Redis | Best effort / 24 hours | 1 hour; cache/session loss accepted |
+| Complete VPS region/account failure | According to the slowest primary store | 8 hours after a new VPS/DNS is available |
 
-DR-volgorde:
+DR sequence:
 
-1. Declareer P1/P0, freeze writes en bepaal laatst consistente recovery point.
-2. Provision nieuwe VPS/account volgens deploymentrunbook; herstel secrets via secret store en roteer bij compromise.
-3. Herstel Supabase/PostgreSQL eerst; verifieer auth, schema, RLS, publications en counts.
-4. Herstel Neo4j uit dezelfde of latere afgeleide snapshot; anders gecontroleerde heringest.
-5. Start lege Redis of herstel alleen geverifieerde tijdelijke state.
-6. Deploy exact compatibele backend/frontend-SHA's en environmentversie.
-7. Voer health, login, tenantnegatie, V3/V4 en datarepresentativiteitchecks uit.
-8. Schakel DNS/verkeer om met verlaagde TTL; monitor intensief.
-9. Documenteer werkelijk RPO/RTO en reconcile writes die na recovery point verloren gingen.
+1. Declare P1/P0, freeze writes and determine the last consistent recovery point.
+2. Provision a new VPS/account according to the deployment runbook; recover secrets via the secret store and rotate on compromise.
+3. Restore Supabase/PostgreSQL first; verify auth, schema, RLS, publications and counts.
+4. Restore Neo4j from the same or a later derived snapshot; otherwise controlled re-ingest.
+5. Start an empty Redis or restore only verified temporary state.
+6. Deploy exactly compatible backend/frontend SHAs and environment version.
+7. Run health, login, tenant negative, V3/V4 and data representativeness checks.
+8. Switch DNS/traffic with reduced TTL; monitor intensively.
+9. Document actual RPO/RTO and reconcile writes lost after the recovery point.
 
-Voer elk kwartaal een tabletop en minimaal halfjaarlijks een technische restore/regionale rebuild uit. Een DR-doel geldt pas als bewezen nadat een andere operator het runbook binnen RTO heeft uitgevoerd.
+Conduct a tabletop exercise quarterly and a technical restore/regional rebuild at least semi-annually. A DR target only counts as proven after another operator has executed the runbook within RTO.

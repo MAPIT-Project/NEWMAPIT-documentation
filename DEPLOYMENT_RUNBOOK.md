@@ -1,21 +1,21 @@
-# Deploymentrunbook
+# Deployment runbook
 
-**Status:** kandidaat-runbook; productie-uitrol geblokkeerd door open P0's  
-**Laatste verificatie tegen repository:** 20 juli 2026  
-**Gekozen topologie:** één Ubuntu/Debian-VPS, NGINX, SvelteKit adapter-node onder PM2, FastAPI onder systemd, Redis en Neo4j in Docker, externe/beheerde Supabase  
-**Eigenaar:** TBD
+**Status:** candidate runbook; production rollout blocked by open P0s  
+**Last verified against repository:** 20 July 2026  
+**Selected topology:** one Ubuntu/Debian VPS, NGINX, SvelteKit adapter-node under PM2, FastAPI under systemd, Redis and Neo4j in Docker, external/managed Supabase  
+**Owner:** TBD
 
-Dit is het enige ondersteunde deploymentpad in de huidige documentatie. De bestaande Kubernetes-assets zijn **niet inzetbaar**: ze starten een niet-bestaande `app.services.celery_app`, gebruiken een niet-bestaand `/metrics`-endpoint, taggen `latest` en deployen geen frontend. `MAP-IT_SA/docker-compose.yml` is evenmin een productie-API-manifest: het gebruikt `--reload`, een source-bindmount en een extern lokaal Supabase-network.
+This is the only supported deployment path in the current documentation. The existing Kubernetes assets are **not deployable**: they start a nonexistent `app.services.celery_app`, use a nonexistent `/metrics` endpoint, tag `latest`, and do not deploy a frontend. `MAP-IT_SA/docker-compose.yml` is likewise not a production API manifest: it uses `--reload`, a source bind mount, and an external local Supabase network.
 
-> **Releaseblokkade:** de laatste quality baseline is 54,8% en “NOT PRODUCTION READY”; frontendchecks en backendtestcollectie zijn niet groen en critical securityissues staan open. Gebruik dit runbook nu voor een afgeschermde stagingomgeving. Productie vereist dat de releasecriteria in [KNOWN_ISSUES_AND_RISKS](KNOWN_ISSUES_AND_RISKS.md) en [SECURITY_REGISTER](SECURITY_REGISTER.md) zijn gesloten of formeel geaccepteerd.
+> **Release blocker:** the latest quality baseline is 54.8% and “NOT PRODUCTION READY”; frontend checks and backend test collection are not green, and critical security issues remain open. Use this runbook for a restricted staging environment for now. Production requires that the release criteria in [KNOWN_ISSUES_AND_RISKS](KNOWN_ISSUES_AND_RISKS.md) and [SECURITY_REGISTER](SECURITY_REGISTER.md) be closed or formally accepted.
 
-## Topologie
+## Topology
 
 ```text
 Internet :443
     |
     v
-NGINX (TLS, rate limit, alleen 22/80/443 publiek)
+NGINX (TLS, rate limit, only 22/80/443 public)
     |
     v
 SvelteKit adapter-node, PM2, 127.0.0.1:3000
@@ -29,25 +29,25 @@ PostgreSQL/     Redis Docker   Neo4j Docker
 Supabase TLS    127.0.0.1:16379 127.0.0.1:17687
 ```
 
-De browser gebruikt de publieke Supabase URL en anon key. De service-rolekey blijft alleen server-side. FastAPI is niet publiek bereikbaar zolang backend-auth/autorisatie niet wordt afgedwongen.
+The browser uses the public Supabase URL and anon key. The service role key remains server-side only. FastAPI is not publicly accessible while backend authentication/authorization is not enforced.
 
 ## 1. Prerequisites
 
-### Server en accounts
+### Server and accounts
 
-De volgende sizing is een **startpunt, niet benchmarkonderbouwd**:
+The following sizing is a **starting point, not benchmark-based**:
 
-| Onderdeel | Minimum voor staging/kleine productie | Opmerking |
+| Component | Minimum for staging/small production | Note |
 |---|---:|---|
-| VPS | 4 vCPU, 8 GiB RAM, 80 GiB SSD | Neo4j is in Compose begrensd op 2 GiB heap plus 512 MiB page cache; Supabase draait extern. |
-| OS | Actuele ondersteunde Ubuntu LTS of Debian stable, x86_64 | Installeer security-updates automatisch. |
-| Python | 3.11.x | `pyproject.toml` richt formatter/linter op py311; Dockerfile gebruikt 3.13 maar dit pad gebruikt geen API-container. |
-| Node | 22.x LTS + npm | Sluit aan op `@types/node` 22; de repo definieert geen `engines`, dus pin de gekozen runtime in serverbeheer. |
-| Docker | Engine met Compose v2 | Alleen Redis 7-alpine en Neo4j 5.22.0-community uit Compose. |
-| NGINX/PM2 | Actuele distributieversie / vastgelegde PM2-versie | Leg werkelijk geïnstalleerde versies vast in het deployrecord. |
-| Supabase/PostgreSQL | Beheerd Supabase-project met pgvector en schema | De huidige repository kan een leeg productieproject nog niet veilig migreren; zie hieronder. |
+| VPS | 4 vCPU, 8 GiB RAM, 80 GiB SSD | Neo4j is limited in Compose to 2 GiB heap plus 512 MiB page cache; Supabase runs externally. |
+| OS | Current supported Ubuntu LTS or Debian stable, x86_64 | Install security updates automatically. |
+| Python | 3.11.x | `pyproject.toml` targets py311 for formatter/linter; the Dockerfile uses 3.13, but this path does not use an API container. |
+| Node | 22.x LTS + npm | Aligns with `@types/node` 22; the repo defines no `engines`, so pin the selected runtime in server management. |
+| Docker | Engine with Compose v2 | Only Redis 7-alpine and Neo4j 5.22.0-community from Compose. |
+| NGINX/PM2 | Current distribution version / recorded PM2 version | Record the versions actually installed in the deployment record. |
+| Supabase/PostgreSQL | Managed Supabase project with pgvector and schema | The current repository cannot yet safely migrate an empty production project; see below. |
 
-Maak een niet-root serviceaccount, bijvoorbeeld `mapit`, en deze layout:
+Create a non-root service account, for example `mapit`, and this layout:
 
 ```text
 /srv/mapit/releases/<release-id>/MAP-IT_SA
@@ -59,26 +59,26 @@ Maak een niet-root serviceaccount, bijvoorbeeld `mapit`, en deze layout:
 /etc/mapit/frontend.env
 ```
 
-Rechten: releasebestanden eigendom van `mapit`, `/etc/mapit/*.env` root-owned met groep `mapit` en mode `0640`, backupmap niet web-accessible. Sta in de firewall alleen SSH, HTTP en HTTPS toe. Poorten 3000, 8000, 16379, 17474 en 17687 mogen niet extern openstaan. Beperk SSH op beheer-IP en gebruik keys, geen wachtwoordlogin.
+Permissions: release files owned by `mapit`, `/etc/mapit/*.env` root-owned with group `mapit` and mode `0640`, backup directory not web-accessible. Allow only SSH, HTTP, and HTTPS through the firewall. Ports 3000, 8000, 16379, 17474, and 17687 must not be externally accessible. Restrict SSH to management IPs and use keys, not password login.
 
-### DNS en TLS
+### DNS and TLS
 
-1. Maak een A/AAAA-record voor het gekozen domein naar de VPS.
-2. Installeer NGINX en Certbot.
-3. Plaats eerst de HTTP-config, vraag daarna een certificaat aan en activeer de TLS-config.
-4. Controleer automatische renewal met `certbot renew --dry-run`.
+1. Create an A/AAAA record for the selected domain pointing to the VPS.
+2. Install NGINX and Certbot.
+3. First install the HTTP configuration, then request a certificate and enable the TLS configuration.
+4. Check automatic renewal with `certbot renew --dry-run`.
 
-### Externe afhankelijkheden
+### External dependencies
 
-- Een bestaand, geback-upt Supabase-project met database-URL, project-URL, anon key en service-rolekey.
-- Minimaal één werkende AI-providerkey; de default is Gemini.
-- Google/Gemini embeddingkey als vector search actief is.
-- Een Mapbox public token met toegestane origins en minimale scopes.
-- DNS/TLS en een secret store of root-only environmentfiles.
+- An existing, backed-up Supabase project with database URL, project URL, anon key, and service role key.
+- At least one working AI provider key; the default is Gemini.
+- Google/Gemini embedding key if vector search is active.
+- A Mapbox public token with permitted origins and minimal scopes.
+- DNS/TLS and a secret store or root-only environment files.
 
-## 2. Release-identiteit en preflight
+## 2. Release identity and preflight
 
-Deploy nooit een zwevende branch of `latest`. Leg voor beide repositories commit-SHA, releasetijd, operator, database-schemahash en dataversie vast.
+Never deploy a floating branch or `latest`. Record the commit SHA for both repositories, release time, operator, database schema hash, and data version.
 
 ```bash
 git -C MAP-IT_SA rev-parse HEAD
@@ -86,7 +86,7 @@ git -C webapp-ui rev-parse HEAD
 sha256sum webapp-ui/supabase_cli/schema.sql MAP-IT_SA/migration/*.sql
 ```
 
-Harde pre-deployment gates:
+Hard pre-deployment gates:
 
 ```bash
 cd MAP-IT_SA
@@ -100,76 +100,76 @@ npm run lint
 npm run build
 ```
 
-De baseline van 20 juli 2026 voldoet hier niet aan. **Stop** bij een fout; gebruik `npm run host` niet als deploygate, omdat het shellscript na de buildstap PM2 alsnog kan starten.
+The baseline from 20 July 2026 does not meet these gates. **Stop** on any error; do not use `npm run host` as a deployment gate, because the shell script may still start PM2 after the build step.
 
-Controleer daarnaast:
+Also check:
 
-- geen secret of echte `.env` in Git/buildartifact;
-- alle critical/high blockers zijn gesloten of schriftelijk geaccepteerd;
-- backup en restoretest zijn recenter dan het afgesproken interval;
-- schema, code en embeddings gebruiken dezelfde dimensie;
-- staging smoke-, login-, chat-, V4- en rollbacktest zijn geslaagd.
+- no secret or real `.env` in Git/build artifact;
+- all critical/high blockers are closed or accepted in writing;
+- backup and restore test are more recent than the agreed interval;
+- schema, code, and embeddings use the same dimension;
+- staging smoke, login, chat, V4, and rollback tests passed.
 
-## 3. Environmentconfiguratie
+## 3. Environment configuration
 
 ### Backend `/etc/mapit/backend.env`
 
-| Variabele | Vereist | Productiewaarde/regel |
+| Variable | Required | Production value/rule |
 |---|---|---|
-| `DATABASE_URL` | ja | TLS-PostgreSQL-URL van Supabase; gebruik een server/private connectiestring. |
-| `SUPABASE_URL` | ja | `https://<project>.supabase.co`. |
-| `SUPABASE_ANON_KEY` | aanbevolen | Publieke anon key; geen service role. |
-| `SUPABASE_SERVICE_KEY` | ja | Service-rolekey, uitsluitend in dit private bestand. |
-| `JWT_SECRET_KEY` | ja | Uniek random geheim, gelijk aan frontend; minimaal 32 random bytes. |
-| `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | minstens één | Alleen geconfigureerde providers vullen. |
-| `DEFAULT_AI_PROVIDER` | ja | `gemini`, `openai` of `openrouter`; defaultcode is `gemini`. |
-| `GOOGLE_EMBEDDING_API_KEY` | bij vectors | Key voor `gemini-embedding-001`; valt in code terug op Gemini-key. |
-| `EMBEDDING_MODEL` | bij vectors | `models/gemini-embedding-001`. |
-| `EMBEDDING_DIMENSION` | bij vectors | `3072`; database moet eerst zijn gemigreerd en heringebed. |
-| `VECTOR_SEARCH_ENABLED` | ja | `false` zolang schema/data niet volledig 3072 zijn; anders `true`. |
-| `REDIS_URL` | ja | `redis://127.0.0.1:16379/0`. |
-| `REDIS_HOST`, `REDIS_PORT` | ja | `127.0.0.1`, `16379`; short-term-memory leest deze apart. |
-| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` | ja | `bolt://127.0.0.1:17687`, `neo4j`, uniek geheim. |
-| `CORS_ORIGINS` | ja | JSON-lijst met exact het HTTPS-domein, bijvoorbeeld `["https://mapit.example"]`; nooit `*` met credentials. |
-| `DEBUG` | ja | `false`. |
+| `DATABASE_URL` | yes | TLS PostgreSQL URL from Supabase; use a server/private connection string. |
+| `SUPABASE_URL` | yes | `https://<project>.supabase.co`. |
+| `SUPABASE_ANON_KEY` | recommended | Public anon key; not the service role. |
+| `SUPABASE_SERVICE_KEY` | yes | Service role key, exclusively in this private file. |
+| `JWT_SECRET_KEY` | yes | Unique random secret, identical to frontend; at least 32 random bytes. |
+| `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | at least one | Populate only configured providers. |
+| `DEFAULT_AI_PROVIDER` | yes | `gemini`, `openai`, or `openrouter`; code default is `gemini`. |
+| `GOOGLE_EMBEDDING_API_KEY` | for vectors | Key for `gemini-embedding-001`; code falls back to Gemini key. |
+| `EMBEDDING_MODEL` | for vectors | `models/gemini-embedding-001`. |
+| `EMBEDDING_DIMENSION` | for vectors | `3072`; database must first be migrated and re-embedded. |
+| `VECTOR_SEARCH_ENABLED` | yes | `false` while schema/data are not fully 3072; otherwise `true`. |
+| `REDIS_URL` | yes | `redis://127.0.0.1:16379/0`. |
+| `REDIS_HOST`, `REDIS_PORT` | yes | `127.0.0.1`, `16379`; short-term memory reads these separately. |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` | yes | `bolt://127.0.0.1:17687`, `neo4j`, unique secret. |
+| `CORS_ORIGINS` | yes | JSON list containing exactly the HTTPS domain, for example `["https://mapit.example"]`; never `*` with credentials. |
+| `DEBUG` | yes | `false`. |
 
-Kopieer geen placeholderwaarde uit `.env.example`. De Compose-default `mapit_secure_password_2024` is niet geschikt voor productie.
+Do not copy any placeholder value from `.env.example`. The Compose default `mapit_secure_password_2024` is not suitable for production.
 
 ### Frontend `/etc/mapit/frontend.env`
 
-| Variabele | Vereist | Productiewaarde/regel |
+| Variable | Required | Production value/rule |
 |---|---|---|
-| `PRIVATE_DATABASE_URL` | ja | Private TLS-database-URL voor Drizzle/serverroutes. |
-| `PUBLIC_SUPABASE_URL`, `VITE_SUPABASE_URL` | ja | Publieke HTTPS-project-URL. |
-| `PUBLIC_SUPABASE_ANON_KEY`, `VITE_SUPABASE_ANON_KEY` | ja | Alleen de anon key. |
-| `SUPABASE_SERVICE_ROLE_KEY` | alleen adminroutes | Server-private service role; nooit als `PUBLIC_*` of `VITE_*`. |
-| `BACKEND_URL` | ja | `http://127.0.0.1:8000`. |
-| `JWT_SECRET_KEY` | ja | Exact hetzelfde sterke geheim als backend. |
-| `MAPBOX_API_KEY` | voor kaart | Origin-beperkte public token; verwijder/roteer eerst de hardcoded token. |
-| `PUBLIC_APP_URL` | ja | Canonieke HTTPS-origin. |
-| `PUBLIC_APP_ENV` | ja | `production`. |
-| `PUBLIC_ENABLE_DEBUG_TOOLS` | ja | `false`. |
-| `PORT`, `HOST`, `ORIGIN` | ja | `3000`, `127.0.0.1`, `https://<domein>`. |
+| `PRIVATE_DATABASE_URL` | yes | Private TLS database URL for Drizzle/server routes. |
+| `PUBLIC_SUPABASE_URL`, `VITE_SUPABASE_URL` | yes | Public HTTPS project URL. |
+| `PUBLIC_SUPABASE_ANON_KEY`, `VITE_SUPABASE_ANON_KEY` | yes | Anon key only. |
+| `SUPABASE_SERVICE_ROLE_KEY` | admin routes only | Server-private service role; never as `PUBLIC_*` or `VITE_*`. |
+| `BACKEND_URL` | yes | `http://127.0.0.1:8000`. |
+| `JWT_SECRET_KEY` | yes | Exactly the same strong secret as the backend. |
+| `MAPBOX_API_KEY` | for map | Origin-restricted public token; first remove/rotate the hardcoded token. |
+| `PUBLIC_APP_URL` | yes | Canonical HTTPS origin. |
+| `PUBLIC_APP_ENV` | yes | `production`. |
+| `PUBLIC_ENABLE_DEBUG_TOOLS` | yes | `false`. |
+| `PORT`, `HOST`, `ORIGIN` | yes | `3000`, `127.0.0.1`, `https://<domain>`. |
 
-Definieer **geen** `PUBLIC_SUPABASE_SERVICE_KEY`. Alles met `PUBLIC_` of `VITE_` kan in browsercode/buildoutput terechtkomen. Statische publieke SvelteKit-variabelen moeten al tijdens `npm run build` aanwezig zijn; een wijziging vereist dus rebuild.
+Do **not** define `PUBLIC_SUPABASE_SERVICE_KEY`. Anything with `PUBLIC_` or `VITE_` can end up in browser code/build output. Static public SvelteKit variables must be present during `npm run build`; a change therefore requires a rebuild.
 
-## 4. Databasevoorbereiding en migrations
+## 4. Database preparation and migrations
 
-De repository heeft nog geen bewezen productie-migration chain. De volledige `webapp-ui/supabase_cli/schema.sql` is een dump inclusief Supabase-systeemobjecten; voer die niet blind uit op een beheerd project. Backend `001_init_schema.sql` dekt niet alle frontendtabellen, en `008`/`009` plus Drizzle bestaan daarnaast. Zie de actuele ledger in [DATABASE_SCHEMA](MAP-IT_SA/docs/DATABASE_SCHEMA.md).
+The repository does not yet have a proven production migration chain. The full `webapp-ui/supabase_cli/schema.sql` is a dump including Supabase system objects; do not execute it blindly on a managed project. Backend `001_init_schema.sql` does not cover all frontend tables, and `008`/`009` plus Drizzle also exist. See the current ledger in [DATABASE_SCHEMA](MAP-IT_SA/docs/DATABASE_SCHEMA.md).
 
-Daarom gelden twee paden:
+Therefore, two paths apply:
 
-1. **Bestaand gecontroleerd productieproject:** maak een backup, vergelijk objecten/dimensies met de queries uit `DATABASE_SCHEMA.md`, voer uitsluitend gereviewde, nog niet toegepaste migrations uit en registreer checksum/tijd/operator.
-2. **Leeg project:** **stop de deployment** totdat een schone stagingrehearsal de canonieke chain volledig heeft bewezen. Een dump in Supabase Studio plakken is geen geaccepteerde productieprocedure.
+1. **Existing controlled production project:** create a backup, compare objects/dimensions using the queries in `DATABASE_SCHEMA.md`, execute only reviewed migrations that have not yet been applied, and record checksum/time/operator.
+2. **Empty project:** **stop the deployment** until a clean staging rehearsal has fully proven the canonical chain. Pasting a dump into Supabase Studio is not an accepted production procedure.
 
-De 768→3072-migratie is destructief voor drie vectorkolommen. Alleen na backup, onderhoudsvenster en een bewezen re-embeddingplan:
+The 768→3072 migration is destructive for three vector columns. Only after a backup, maintenance window, and a proven re-embedding plan:
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
   -f MAP-IT_SA/migration/002_upgrade_embeddings_to_3072.sql
 ```
 
-Daarna moeten funding calls, document chunks en embedding cache opnieuw worden opgebouwd. Zet tot de verificatie `VECTOR_SEARCH_ENABLED=false`. Voer count-, dimensie- en RLS/publicationchecks uit `DATABASE_SCHEMA.md` uit. Data bootstrap staat in [DATA_INGESTION](MAP-IT_SA/docs/guides/DATA_INGESTION.md).
+Afterward, funding calls, document chunks, and embedding cache must be rebuilt. Set `VECTOR_SEARCH_ENABLED=false` until verification is complete. Run the count, dimension, and RLS/publication checks from `DATABASE_SCHEMA.md`. Data bootstrap is documented in [DATA_INGESTION](MAP-IT_SA/docs/guides/DATA_INGESTION.md).
 
 ## 5. Build
 
@@ -184,7 +184,7 @@ python -m pip install -r requirements.txt
 python -c "from app.main import app; print(app.title)"
 ```
 
-`requirements-dev.txt` hoort in de pre-release build/testomgeving, niet noodzakelijk op de productieserver.
+`requirements-dev.txt` belongs in the pre-release build/test environment, not necessarily on the production server.
 
 ### Frontend
 
@@ -200,13 +200,13 @@ npm run build
 test -f build/index.js
 ```
 
-Gebruik dezelfde lockfile en Node-major als in staging. Bewaar buildlog en checksums bij het release-record.
+Use the same lockfile and Node major version as in staging. Store the build log and checksums with the release record.
 
-## 6. Services installeren
+## 6. Install services
 
-### Redis en Neo4j
+### Redis and Neo4j
 
-Start alleen deze twee Compose-services met een vaste projectnaam. Daardoor wordt het externe Supabase-network voor de development-API niet gebruikt en blijven volumes over releases heen hetzelfde.
+Start only these two Compose services with a fixed project name. This avoids using the external Supabase network for the development API and keeps volumes consistent across releases.
 
 ```bash
 cd /srv/mapit/current/backend
@@ -215,15 +215,15 @@ docker compose --env-file /etc/mapit/backend.env -p mapit ps
 docker compose --env-file /etc/mapit/backend.env -p mapit exec redis redis-cli ping
 ```
 
-Controleer Neo4j via Bolt of intern HTTP:
+Check Neo4j via Bolt or internal HTTP:
 
 ```bash
 curl --fail http://127.0.0.1:17474/
 ```
 
-### FastAPI onder systemd
+### FastAPI under systemd
 
-Maak `/etc/systemd/system/mapit-api.service`:
+Create `/etc/systemd/system/mapit-api.service`:
 
 ```ini
 [Unit]
@@ -251,7 +251,7 @@ ReadWritePaths=/srv/mapit/current/backend/uploads
 WantedBy=multi-user.target
 ```
 
-Maak de uploadmap schrijfbaar voor `mapit`, laad daarna:
+Make the upload directory writable by `mapit`, then load:
 
 ```bash
 sudo systemctl daemon-reload
@@ -261,9 +261,9 @@ curl --fail http://127.0.0.1:8000/api/health/live
 curl --fail http://127.0.0.1:8000/api/health/ready
 ```
 
-Begin met twee workers en meet geheugen/locks. Redis moet beschikbaar zijn voor gedeelde state; lokale fallbacks zijn niet geschikt voor consistente multi-workerstate.
+Start with two workers and measure memory/locks. Redis must be available for shared state; local fallbacks are unsuitable for consistent multi-worker state.
 
-### SvelteKit onder PM2
+### SvelteKit under PM2
 
 ```bash
 cd /srv/mapit/current/frontend
@@ -276,17 +276,17 @@ pm2 startup
 curl --fail http://127.0.0.1:3000/api/backend-status
 ```
 
-Voer het door `pm2 startup` getoonde rootcommando eenmalig uit. Gebruik niet poort 5173: dat is de Vite-devserver; deze productiebuild luistert expliciet op 3000.
+Run the root command shown by `pm2 startup` once. Do not use port 5173: that is the Vite development server; this production build explicitly listens on 3000.
 
 ## 7. NGINX
 
-Plaats in `/etc/nginx/conf.d/mapit-limits.conf` (de `http`-context):
+Place in `/etc/nginx/conf.d/mapit-limits.conf` (the `http` context):
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=mapit_app:10m rate=20r/s;
 ```
 
-Plaats in `/etc/nginx/sites-available/mapit.conf`, vervang domein en certificaatpaden en symlink naar `sites-enabled`:
+Place in `/etc/nginx/sites-available/mapit.conf`, replace the domain and certificate paths, and symlink to `sites-enabled`:
 
 ```nginx
 server {
@@ -330,7 +330,7 @@ server {
 }
 ```
 
-Deze topologie proxy't Supabase niet via de VPS; browser en server gebruiken de beheerde HTTPS-URL. Dat vermijdt de oude, incomplete `/supabase/`-config en houdt service-roleverkeer server-side.
+This topology does not proxy Supabase through the VPS; browser and server use the managed HTTPS URL. This avoids the old, incomplete `/supabase/` configuration and keeps service role traffic server-side.
 
 ```bash
 sudo nginx -t
@@ -338,21 +338,21 @@ sudo systemctl reload nginx
 curl --fail https://mapit.example/api/backend-status
 ```
 
-## 8. Deployvolgorde
+## 8. Deployment sequence
 
-1. Kondig maintenance/release aan en blokkeer schemawijzigende writes indien een migration nodig is.
-2. Noteer huidige release-SHA's en maak database-/Neo4jbackups volgens [OPERATIONS_RUNBOOK](OPERATIONS_RUNBOOK.md).
-3. Clone/fetch beide repositories naar een nieuwe, immutable release-directory en checkout exacte SHA's.
-4. Bouw backendvenv en frontend zoals hierboven; alle gates moeten slagen.
-5. Verifieer schema en voer alleen goedgekeurde pending migrations uit; voer post-migration queries uit.
-6. Start/verifieer Redis en Neo4j.
-7. Wissel de `current/backend`- en `current/frontend`-symlinks atomair naar de nieuwe release.
-8. `sudo systemctl restart mapit-api`; wacht op `/api/health/ready`.
-9. Laad `/etc/mapit/frontend.env`, start of `pm2 restart mapit-ui --update-env`; wacht op `/api/backend-status`.
-10. Test NGINX-config en reload.
-11. Voer de volledige post-deploychecklist uit; zet maintenance pas daarna uit.
+1. Announce maintenance/release and block schema-changing writes if a migration is required.
+2. Record current release SHAs and create database/Neo4j backups according to [OPERATIONS_RUNBOOK](OPERATIONS_RUNBOOK.md).
+3. Clone/fetch both repositories into a new, immutable release directory and check out exact SHAs.
+4. Build the backend venv and frontend as described above; all gates must pass.
+5. Verify the schema and execute only approved pending migrations; run post-migration queries.
+6. Start/verify Redis and Neo4j.
+7. Atomically switch the `current/backend` and `current/frontend` symlinks to the new release.
+8. `sudo systemctl restart mapit-api`; wait for `/api/health/ready`.
+9. Load `/etc/mapit/frontend.env`, start or `pm2 restart mapit-ui --update-env`; wait for `/api/backend-status`.
+10. Test the NGINX configuration and reload.
+11. Complete the full post-deployment checklist; only then disable maintenance.
 
-## 9. Health- en smokechecks
+## 9. Health and smoke checks
 
 ```bash
 curl --fail http://127.0.0.1:8000/api/health/live
@@ -362,29 +362,29 @@ curl --fail http://127.0.0.1:3000/api/backend-status
 curl --fail https://mapit.example/api/backend-status
 ```
 
-`/api/health/live` bewijst alleen dat het proces antwoordt. `/ready` controleert PostgreSQL en, indien geconfigureerd, Gemini. De volledige healthcheck controleert ook Neo4j, Redis, embeddings en Supabase. Controleer de JSON-status; `curl --fail` faalt niet wanneer de full-healthbody `unhealthy` bevat, omdat dat endpoint zelf geen 503 zet. Gebruik V4 `/api/v4/proposal-session/health` nog niet als probe: de eerdere `/{session_id}`-route overschaduwt dit pad.
+`/api/health/live` proves only that the process responds. `/ready` checks PostgreSQL and, if configured, Gemini. The full health check also checks Neo4j, Redis, embeddings, and Supabase. Check the JSON status; `curl --fail` does not fail when the full health body contains `unhealthy`, because the endpoint itself does not return 503. Do not yet use V4 `/api/v4/proposal-session/health` as a probe: the earlier `/{session_id}` route shadows this path.
 
-Voer daarna handmatig uit:
+Then perform manually:
 
-- login, refresh en logout in een schone browser;
-- aanmaken van een persoonlijke conversatie;
-- één V3 SSE-chatvraag met zichtbare status/tool/answer/complete-flow;
-- herladen en teruglezen van gesprek;
-- V4 proposal session aanmaken, chatten en één sectiehandeling;
-- controleren dat een tweede testgebruiker geen data van de eerste ziet;
-- browserconsole op mixed content, CORS- en cookieproblemen;
-- logs op secrets, tracebacks en herstartloops.
+- login, refresh, and logout in a clean browser;
+- create a personal conversation;
+- one V3 SSE chat question with visible status/tool/answer/complete flow;
+- reload and read back the conversation;
+- create a V4 proposal session, chat, and perform one section action;
+- verify that a second test user cannot see the first user's data;
+- inspect the browser console for mixed content, CORS, and cookie issues;
+- inspect logs for secrets, tracebacks, and restart loops.
 
 ## 10. Rollback
 
-Applicatierollback en databaserollback zijn aparte besluiten.
+Application rollback and database rollback are separate decisions.
 
-### Applicatie zonder schemawijziging
+### Application without schema change
 
-1. Stop verkeer of zet maintenance aan.
-2. Zet beide `current`-symlinks terug naar de vorige release-ID.
-3. Herlaad de vorige frontend-environment indien die verschilde.
-4. Restart backend en frontend:
+1. Stop traffic or enable maintenance.
+2. Point both `current` symlinks back to the previous release ID.
+3. Reload the previous frontend environment if it differed.
+4. Restart backend and frontend:
 
 ```bash
 sudo systemctl restart mapit-api
@@ -395,36 +395,36 @@ set +a
 pm2 restart mapit-ui --update-env
 ```
 
-5. Voer alle health- en smokechecks uit; leg reden/tijd/operator vast.
+5. Run all health and smoke checks; record reason/time/operator.
 
-### Met schema- of datamigratie
+### With schema or data migration
 
-- Voer geen automatische “down” uit: niet alle migrations hebben rollback en `002` verwijdert embeddings.
-- Kies vooraf één van: backward-compatible approllback, expliciet gereviewde down-migration, of volledige PostgreSQL-restore.
-- Bij `002`: een approllback naar 768 vereist databasebackup terugzetten of 768-kolommen en embeddings opnieuw opbouwen. Zet vector search uit tijdens herstel.
-- Herstel PostgreSQL eerst, daarna Neo4j-afgeleide data; Redis mag als cache worden geleegd. Zie het operationsrunbook.
+- Do not perform an automatic “down”: not all migrations have rollback, and `002` removes embeddings.
+- Choose one in advance: backward-compatible application rollback, explicitly reviewed down migration, or full PostgreSQL restore.
+- For `002`: an application rollback to 768 requires restoring the database backup or rebuilding 768 columns and embeddings. Disable vector search during recovery.
+- Restore PostgreSQL first, then Neo4j-derived data; Redis can be cleared as a cache. See the operations runbook.
 
-## 11. Post-deploychecklist
+## 11. Post-deployment checklist
 
-- [ ] Release-ID, beide SHA's, operator, datum en change ticket geregistreerd.
-- [ ] Alle build/test/lint/check-gates groen en logs bewaard.
-- [ ] Databasebackup en restorebewijs bekend; migration checksums geregistreerd.
-- [ ] Vectorafmetingen en embeddingmodel consistent; counts binnen verwachte bandbreedte.
-- [ ] `live`, `ready`, full health en frontend backend-status gecontroleerd; V4-functionaliteit via een echte sessionsmoke getest.
-- [ ] TLS-chain, renewal, DNS en firewall gecontroleerd; interne poorten niet publiek.
-- [ ] Login/logout, V3 SSE, persistence en V4-smoke geslaagd.
-- [ ] RLS/tenant-negatiecheck met tweede gebruiker geslaagd.
-- [ ] PM2/systemd/Docker/NGINX stabiel zonder restartloop of nieuwe errors.
-- [ ] Monitoring en alerts ontvangen telemetry; synthetische check werkt.
-- [ ] Rollbackdoel bestaat en is getest op staging.
-- [ ] Bekende issues bijgewerkt en stakeholders over resterende beperkingen geïnformeerd.
+- [ ] Release ID, both SHAs, operator, date, and change ticket recorded.
+- [ ] All build/test/lint/check gates green and logs retained.
+- [ ] Database backup and restore evidence known; migration checksums recorded.
+- [ ] Vector dimensions and embedding model consistent; counts within expected range.
+- [ ] `live`, `ready`, full health, and frontend backend status checked; V4 functionality tested through a real session smoke test.
+- [ ] TLS chain, renewal, DNS, and firewall checked; internal ports not public.
+- [ ] Login/logout, V3 SSE, persistence, and V4 smoke test passed.
+- [ ] RLS/tenant negative check with second user passed.
+- [ ] PM2/systemd/Docker/NGINX stable without restart loop or new errors.
+- [ ] Monitoring and alerts receive telemetry; synthetic check works.
+- [ ] Rollback target exists and was tested on staging.
+- [ ] Known issues updated and stakeholders informed of remaining limitations.
 
-## Canonieke vervolginformatie
+## Canonical follow-up information
 
-- [Onboarding en lokale quickstart](START_HERE.md)
+- [Onboarding and local quickstart](START_HERE.md)
 - [Backend developer setup](MAP-IT_SA/docs_tracked/DEVELOPER_SETUP.md)
-- [Database en migration ledger](MAP-IT_SA/docs/DATABASE_SCHEMA.md)
+- [Database and migration ledger](MAP-IT_SA/docs/DATABASE_SCHEMA.md)
 - [Data bootstrap](MAP-IT_SA/docs/guides/DATA_INGESTION.md)
-- [API/auth/SSE-contract](API_CONTRACT.md)
-- [Securityregister](SECURITY_REGISTER.md)
-- [Operations, backup en incident response](OPERATIONS_RUNBOOK.md)
+- [API/auth/SSE contract](API_CONTRACT.md)
+- [Security register](SECURITY_REGISTER.md)
+- [Operations, backup, and incident response](OPERATIONS_RUNBOOK.md)

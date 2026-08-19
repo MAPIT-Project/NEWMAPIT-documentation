@@ -1,217 +1,217 @@
-# Dependency- en runtimematrix
+# Dependency and runtime matrix
 
-**Status:** geverifieerde repository-inventarisatie
+**Status:** verified repository inventory
 
-**Laatst gecontroleerd:** 20 juli 2026
+**Last checked:** 20 July 2026
 
-Dit document beschrijft de directe applicatie-dependencies, runtimes, dataservices en AI-modellen van MAPIT. Een versie is alleen **exact** wanneer die in een lockfile of met `==` is vastgelegd. Een bereik zoals `>=` en een containertag zoals `7-alpine` zijn niet reproduceerbaar tot op patchniveau.
+This document describes the direct application dependencies, runtimes, data services and AI models of MAPIT. A version is only **exact** when it is pinned in a lockfile or with `==`. A range such as `>=` and a container tag such as `7-alpine` are not reproducible down to patch level.
 
-## Bronnen en afbakening
+## Sources and delineation
 
-De matrix is gecontroleerd tegen:
+The matrix was checked against:
 
-- [`MAP-IT_SA/requirements.txt`](MAP-IT_SA/requirements.txt), [`requirements-dev.txt`](MAP-IT_SA/requirements-dev.txt), [`pyproject.toml`](MAP-IT_SA/pyproject.toml), [`Dockerfile`](MAP-IT_SA/Dockerfile) en [`docker-compose.yml`](MAP-IT_SA/docker-compose.yml);
-- [`webapp-ui/package.json`](webapp-ui/package.json) en [`package-lock.json`](webapp-ui/package-lock.json) (`lockfileVersion: 3`);
-- de aparte [`csv_data_extractor/requirements.txt`](webapp-ui/csv_data_extractor/requirements.txt) en [`Dockerfile`](webapp-ui/csv_data_extractor/Dockerfile);
-- beide Supabase-configs: [`supabase_cli/config.toml`](webapp-ui/supabase_cli/config.toml) en [`supabase_cli/supabase/config.toml`](webapp-ui/supabase_cli/supabase/config.toml);
-- de backend- en frontend-CI-workflows en de actieve provider-/modelconfiguratie in `MAP-IT_SA/app`.
+- [`MAP-IT_SA/requirements.txt`](MAP-IT_SA/requirements.txt), [`requirements-dev.txt`](MAP-IT_SA/requirements-dev.txt), [`pyproject.toml`](MAP-IT_SA/pyproject.toml), [`Dockerfile`](MAP-IT_SA/Dockerfile) and [`docker-compose.yml`](MAP-IT_SA/docker-compose.yml);
+- [`webapp-ui/package.json`](webapp-ui/package.json) and [`package-lock.json`](webapp-ui/package-lock.json) (`lockfileVersion: 3`);
+- the separate [`csv_data_extractor/requirements.txt`](webapp-ui/csv_data_extractor/requirements.txt) and [`Dockerfile`](webapp-ui/csv_data_extractor/Dockerfile);
+- both Supabase configs: [`supabase_cli/config.toml`](webapp-ui/supabase_cli/config.toml) and [`supabase_cli/supabase/config.toml`](webapp-ui/supabase_cli/supabase/config.toml);
+- the backend and frontend CI workflows and the active provider/model configuration in `MAP-IT_SA/app`.
 
-De npm-tabellen bevatten de **directe** dependencies uit `package.json`; transitieve packages blijven reproduceerbaar via `package-lock.json`, maar zijn hier niet afzonderlijk opgesomd. Python heeft geen lockfile, waardoor alleen de met `==` vastgezette packages exact reproduceerbaar zijn.
+The npm tables contain the **direct** dependencies from `package.json`; transitive packages remain reproducible via `package-lock.json`, but are not listed separately here. Python has no lockfile, which means only the packages pinned with `==` are exactly reproducible.
 
-## Runtime requirements en compatibiliteit
+## Runtime requirements and compatibility
 
-| Onderdeel | Overdrachtsbaseline | Bewijs in repository | Exactheid en upgrade-opmerking |
+| Component | Handover baseline | Evidence in repository | Exactness and upgrade note |
 |---|---|---|---|
-| Python | **3.11+** | CI gebruikt 3.11; Black en Ruff richten zich op `py311`; backend-Dockerfile gebruikt `python:3.13-slim`; CSV-extractor gebruikt `python:3.11-slim` | De oude frontend deployment guide noemt 3.9+, maar dat is niet de actuele backend-baseline. Align lokaal, CI en container bij voorkeur op één geteste minorversie. `3.13-slim` is bovendien een bewegende tag. |
-| Node.js | **20+** | Frontend-CI gebruikt Node 20; meerdere gelockte buildpackages vereisen minimaal Node 18 | `package.json` heeft geen `engines` en er is geen `.nvmrc`/`.node-version`. Leg Node 20 vast voordat builds worden overgedragen. |
-| npm | Compatibel met lockfile v3 | `package-lock.json` heeft `lockfileVersion: 3`; CI gebruikt `npm ci` | Geen npm-versie vastgelegd. Gebruik `npm ci`, niet `npm install`, voor dezelfde dependencygraph. |
-| PostgreSQL | **15+**, met pgvector | Beide Supabase-configs zetten `major_version = 15`; de geverifieerde lokale snapshot was PostgreSQL 15.8 | Het optionele, uitgecommentarieerde Compose-alternatief gebruikt `pgvector/pgvector:pg16`. Test migrations en restore voordat van major 15 naar 16 wordt gegaan. |
-| pgvector | Vereist; huidige bewezen snapshot **0.8.0** | `CREATE EXTENSION vector` in het schema; `docs/DATABASE_SCHEMA.md` registreert lokaal pgvector 0.8.0 | Niet als image-/extensionversie in actieve infra vastgezet. 3072-dimensionale vectors gebruiken momenteel exacte/sequentiële zoekacties; valideer indexstrategie apart bij upgrades. |
-| Supabase CLI | Nodig voor lokale Supabase-stack; **niet vastgezet** | Twee `config.toml`-files, beide voor PostgreSQL 15; geen CLI-package of versiefile | Op de reviewhost gaf `supabase --version` 2.15.8, maar dit is geen reproduceerbare projecteis. Kies en leg een CLI-versie vast en test `start`, reset en migrations daarmee. |
-| Neo4j | **5.x**; container `5.22.0-community` | Actieve Compose-service gebruikt `neo4j:5.22.0-community` | Patchversie is genoemd, maar image-digest niet. APOC en Graph Data Science worden zonder afzonderlijke pluginversie aangevraagd en kunnen daardoor driften. |
-| Redis | **7.x**; container `7-alpine` | Compose gebruikt `redis:7-alpine` | Alleen major en variant zijn vastgelegd; minor/patch bewegen mee. Pin een concrete tag of digest voor productie. |
-| Docker / Compose | Recente Docker Engine met Compose v2 | Compose gebruikt healthcheck-voorwaarden, externe netwerken en `host-gateway` | Engine- en Compose-versie zijn niet vastgelegd. Verifieer de externe `supabase_network_supabase_cli` vóór deployment. |
+| Python | **3.11+** | CI uses 3.11; Black and Ruff target `py311`; backend Dockerfile uses `python:3.13-slim`; CSV extractor uses `python:3.11-slim` | The old frontend deployment guide mentions 3.9+, but that is not the current backend baseline. Preferably align local, CI and containers on one tested minor version. `3.13-slim` is moreover a moving tag. |
+| Node.js | **20+** | Frontend CI uses Node 20; several locked build packages require at least Node 18 | `package.json` has no `engines` and there is no `.nvmrc`/`.node-version`. Pin Node 20 before builds are handed over. |
+| npm | Compatible with lockfile v3 | `package-lock.json` has `lockfileVersion: 3`; CI uses `npm ci` | No npm version pinned. Use `npm ci`, not `npm install`, for the same dependency graph. |
+| PostgreSQL | **15+**, with pgvector | Both Supabase configs set `major_version = 15`; the verified local snapshot was PostgreSQL 15.8 | The optional, commented-out Compose alternative uses `pgvector/pgvector:pg16`. Test migrations and restore before moving from major 15 to 16. |
+| pgvector | Required; current proven snapshot **0.8.0** | `CREATE EXTENSION vector` in the schema; `docs/DATABASE_SCHEMA.md` records local pgvector 0.8.0 | Not pinned as image/extension version in active infrastructure. 3072-dimensional vectors currently use exact/sequential searches; validate index strategy separately on upgrades. |
+| Supabase CLI | Needed for the local Supabase stack; **not pinned** | Two `config.toml` files, both for PostgreSQL 15; no CLI package or version file | On the review host `supabase --version` gave 2.15.8, but this is not a reproducible project requirement. Choose and pin a CLI version and test `start`, reset and migrations with it. |
+| Neo4j | **5.x**; container `5.22.0-community` | Active Compose service uses `neo4j:5.22.0-community` | Patch version is stated, but image digest is not. APOC and Graph Data Science are requested without separate plugin versions and can therefore drift. |
+| Redis | **7.x**; container `7-alpine` | Compose uses `redis:7-alpine` | Only major and variant are pinned; minor/patch move along. Pin a concrete tag or digest for production. |
+| Docker / Compose | Recent Docker Engine with Compose v2 | Compose uses healthcheck conditions, external networks and `host-gateway` | Engine and Compose versions are not pinned. Verify the external `supabase_network_supabase_cli` before deployment. |
 
-### Belangrijkste versieverschillen
+### Main version differences
 
-1. **Python 3.9 versus 3.11/3.13:** `webapp-ui/DEPLOYMENT_GUIDE.md` noemt nog Python 3.9+, terwijl de actuele backend-README, toolconfig en CI 3.11 als minimum hanteren. De backendcontainer draait zelfs 3.13. Gebruik 3.11 als overdrachtsminimum en kies na een volledige test expliciet 3.11 of 3.13 als uniforme runtime.
-2. **PostgreSQL 15 versus 16:** lokale Supabase-configuratie en de bewezen databasesnapshot gebruiken major 15; alleen de optionele Compose-fallback noemt pg16. Beschouw een overstap naar 16 als database-upgrade, niet als drop-in wijziging.
-3. **Python is grotendeels niet gelockt:** 18 van de 27 backend-runtimevereisten gebruiken een minimum of bereik. Twee installaties op verschillende dagen kunnen daardoor andere dependencyversies krijgen.
-4. **Container-tags zijn niet immutable:** `python:3.13-slim`, `python:3.11-slim` en `redis:7-alpine` kunnen achter dezelfde tag wijzigen.
-5. **Twee Google-SDK's:** `google-generativeai` wordt door de actieve code geïmporteerd; `google-genai` staat ook in `requirements.txt`, maar er is geen import ervan in de applicatie gevonden. Consolideer pas na provider-regressietests.
+1. **Python 3.9 versus 3.11/3.13:** `webapp-ui/DEPLOYMENT_GUIDE.md` still mentions Python 3.9+, while the current backend README, tool configuration and CI use 3.11 as the minimum. The backend container even runs 3.13. Use 3.11 as the handover minimum and, after full testing, explicitly choose 3.11 or 3.13 as the uniform runtime.
+2. **PostgreSQL 15 versus 16:** the local Supabase configuration and the proven database snapshot use major 15; only the optional Compose fallback mentions pg16. Treat a move to 16 as a database upgrade, not as a drop-in change.
+3. **Python is largely unlocked:** 18 of the 27 backend runtime requirements use a minimum or range. Two installations on different days can therefore get different dependency versions.
+4. **Container tags are not immutable:** `python:3.13-slim`, `python:3.11-slim` and `redis:7-alpine` can change behind the same tag.
+5. **Two Google SDKs:** `google-generativeai` is imported by the active code; `google-genai` is also in `requirements.txt`, but no import of it was found in the application. Consolidate only after provider regression tests.
 
-## Backend — Python runtime-dependencies
+## Backend — Python runtime dependencies
 
-Bron: `MAP-IT_SA/requirements.txt`.
+Source: `MAP-IT_SA/requirements.txt`.
 
-| Dependency | Manifestversie | Exact? | Waar gebruikt / upgrade-opmerking |
+| Dependency | Manifest version | Exact? | Where used / upgrade note |
 |---|---:|:---:|---|
-| `beautifulsoup4` | `4.13.4` | ja | Backend HTML-/documentverwerking |
-| `fastapi` | `0.115.12` | ja | Backend HTTP API |
-| `openai` | `1.87.0` | ja | OpenAI-provider en OpenRouter-compatible client |
-| `protobuf` | `>=3.20.2,<6.0.0` | nee | Google AI-stack; de Dockerfile installeert vooraf het smallere `>=3.19.5,<5.0.0`. Maak deze constraints gelijk om resolververschillen te voorkomen. |
-| `psycopg2-binary` | `2.9.10` | ja | PostgreSQL-verbindingen |
-| `pydantic` | `2.11.7` | ja | Datamodellen en validatie |
-| `pydantic-settings` | `2.1.0` | ja | Environmentconfiguratie |
-| `python-dotenv` | `1.1.0` | ja | `.env` laden |
-| `Requests` | `2.32.4` | ja | Externe HTTP-API's |
-| `uvicorn` | `0.34.3` | ja | ASGI-server |
-| `google-genai` | `>=1.16.1` | nee | Nieuwe Google Gen AI SDK staat in manifest, maar actieve applicatie-import niet gevonden |
-| `lxml` | `>=5.2.0` | nee | XML-/HTML-verwerking; Docker installeert buildheaders |
-| `numpy` | `>=1.24.0` | nee | Vectors en numerieke verwerking |
-| `scikit-learn` | `>=1.3.0` | nee | Statistische/data-intelligencefuncties |
-| `celery` | `>=5.3.0` | nee | Achtergrondtaken |
-| `redis` | `>=4.5.0` | nee | Python-client voor Redis/Celery |
-| `kombu` | `>=5.3.0` | nee | Celery messaging |
-| `supabase` | `>=2.3.0` | nee | Supabase Python-client |
-| `pypdf2` | `>=3.0.1` | nee | PDF-extractie |
-| `pdfplumber` | `>=0.10.0` | nee | PDF-layout en tekstextractie |
-| `tiktoken` | `>=0.5.2` | nee | Tokentelling/chunking |
-| `google-generativeai` | `>=0.3.2` | nee | SDK die de actieve Gemini- en embeddingcode importeert |
-| `python-multipart` | `>=0.0.6` | nee | Multipart uploads in FastAPI |
-| `python-docx` | `>=1.1.0` | nee | Proposal-/Word-documentgeneratie |
-| `openpyxl` | `>=3.1.2` | nee | Excelverwerking |
-| `neo4j` | `>=5.14.0` | nee | Neo4j-driver |
-| `sentence-transformers` | `>=2.2.0` | nee | Lokale cross-encoder-reranking; downloadt modelartefacten bij gebruik |
+| `beautifulsoup4` | `4.13.4` | yes | Backend HTML/document processing |
+| `fastapi` | `0.115.12` | yes | Backend HTTP API |
+| `openai` | `1.87.0` | yes | OpenAI provider and OpenRouter-compatible client |
+| `protobuf` | `>=3.20.2,<6.0.0` | no | Google AI stack; the Dockerfile pre-installs the narrower `>=3.19.5,<5.0.0`. Make these constraints equal to avoid resolver differences. |
+| `psycopg2-binary` | `2.9.10` | yes | PostgreSQL connections |
+| `pydantic` | `2.11.7` | yes | Data models and validation |
+| `pydantic-settings` | `2.1.0` | yes | Environment configuration |
+| `python-dotenv` | `1.1.0` | yes | Loading `.env` |
+| `Requests` | `2.32.4` | yes | External HTTP APIs |
+| `uvicorn` | `0.34.3` | yes | ASGI server |
+| `google-genai` | `>=1.16.1` | no | New Google Gen AI SDK is in the manifest, but no active application import found |
+| `lxml` | `>=5.2.0` | no | XML/HTML processing; Docker installs build headers |
+| `numpy` | `>=1.24.0` | no | Vectors and numerical processing |
+| `scikit-learn` | `>=1.3.0` | no | Statistical/data-intelligence functions |
+| `celery` | `>=5.3.0` | no | Background tasks |
+| `redis` | `>=4.5.0` | no | Python client for Redis/Celery |
+| `kombu` | `>=5.3.0` | no | Celery messaging |
+| `supabase` | `>=2.3.0` | no | Supabase Python client |
+| `pypdf2` | `>=3.0.1` | no | PDF extraction |
+| `pdfplumber` | `>=0.10.0` | no | PDF layout and text extraction |
+| `tiktoken` | `>=0.5.2` | no | Token counting/chunking |
+| `google-generativeai` | `>=0.3.2` | no | SDK imported by the active Gemini and embedding code |
+| `python-multipart` | `>=0.0.6` | no | Multipart uploads in FastAPI |
+| `python-docx` | `>=1.1.0` | no | Proposal/Word document generation |
+| `openpyxl` | `>=3.1.2` | no | Excel processing |
+| `neo4j` | `>=5.14.0` | no | Neo4j driver |
+| `sentence-transformers` | `>=2.2.0` | no | Local cross-encoder reranking; downloads model artifacts on use |
 
-De Dockerfile installeert daarnaast zonder vaste Debian-versie `libxml2-dev`, `libxslt1-dev` en `build-essential`. Ook de basisimage is niet met digest vastgezet. Daardoor is een containerbuild niet volledig bit-for-bit reproduceerbaar.
+The Dockerfile additionally installs `libxml2-dev`, `libxslt1-dev` and `build-essential` without a pinned Debian version. The base image is also not pinned by digest. As a result, a container build is not fully bit-for-bit reproducible.
 
-## Backend — ontwikkel- en testdependencies
+## Backend — development and test dependencies
 
-Bron: `MAP-IT_SA/requirements-dev.txt`.
+Source: `MAP-IT_SA/requirements-dev.txt`.
 
-| Dependency | Exacte versie | Waar gebruikt | Upgrade-opmerking |
+| Dependency | Exact version | Where used | Upgrade note |
 |---|---:|---|---|
-| `black` | `24.8.0` | Formatter, CI | `pyproject.toml` richt zich op Python 3.11 |
+| `black` | `24.8.0` | Formatter, CI | `pyproject.toml` targets Python 3.11 |
 | `ruff` | `0.6.9` | Linter, CI | `target-version = "py311"` |
-| `isort` | `5.13.2` | Importsortering | Black-profiel actief |
-| `pytest` | `8.3.2` | Tests | Integratiegedeelte is in CI nog niet blokkerend |
-| `pytest-cov` | `5.0.0` | Testdekking | — |
-| `pre-commit` | `3.8.0` | Lokale kwaliteitschecks | Hookconfiguratie apart controleren bij upgrades |
+| `isort` | `5.13.2` | Import sorting | Black profile active |
+| `pytest` | `8.3.2` | Tests | Integration part is not yet blocking in CI |
+| `pytest-cov` | `5.0.0` | Test coverage | — |
+| `pre-commit` | `3.8.0` | Local quality checks | Check hook configuration separately on upgrades |
 
 ## CSV data extractor — Python
 
-Bronnen: `webapp-ui/csv_data_extractor/requirements.txt` en de bijbehorende Dockerfile.
+Sources: `webapp-ui/csv_data_extractor/requirements.txt` and the associated Dockerfile.
 
-| Dependency | Manifestversie | Exact? | Waar gebruikt / upgrade-opmerking |
+| Dependency | Manifest version | Exact? | Where used / upgrade note |
 |---|---:|:---:|---|
-| `pandas` | `>=2.0.0` | nee | CSV-inlezen en normaliseren |
-| `sqlalchemy` | `>=2.0.0` | nee | Databaseabstractie |
-| `psycopg2-binary` | `>=2.9.0` | nee | PostgreSQL-driver |
-| `python-dotenv` | `>=1.0.0` | nee | Environmentconfiguratie |
+| `pandas` | `>=2.0.0` | no | CSV reading and normalisation |
+| `sqlalchemy` | `>=2.0.0` | no | Database abstraction |
+| `psycopg2-binary` | `>=2.9.0` | no | PostgreSQL driver |
+| `python-dotenv` | `>=1.0.0` | no | Environment configuration |
 
-De extractor gebruikt `python:3.11-slim`, maar heeft geen lockfile. Deze kleine service kan dus eveneens per build andere packageversies krijgen.
+The extractor uses `python:3.11-slim`, but has no lockfile. This small service can therefore also get different package versions per build.
 
-## Frontend — runtime-dependencies
+## Frontend — runtime dependencies
 
-De kolom “gelockt” komt uit `package-lock.json`; “range” is de declaratie in `package.json`. `npm ci` installeert de gelockte versie.
+The "locked" column comes from `package-lock.json`; "range" is the declaration in `package.json`. `npm ci` installs the locked version.
 
-| Dependency | Gelockt | Range | Waar gebruikt / upgrade-opmerking |
+| Dependency | Locked | Range | Where used / upgrade note |
 |---|---:|---:|---|
-| `@anthropic-ai/claude-code` | `2.1.153` | `^2.1.153` | Staat als runtime-dependency, maar is geen in de applicatiecode aangetroffen LLM-provider; beoordeel of dit ontwikkelgereedschap is. |
-| `@deck.gl/aggregation-layers` | `9.1.8` | `^9.1.8` | Kaartvisualisatie |
-| `@deck.gl/core` | `9.1.8` | `^9.1.8` | Kaartvisualisatie |
-| `@deck.gl/layers` | `9.1.8` | `^9.1.8` | Kaartvisualisatie |
-| `@deck.gl/mapbox` | `9.1.8` | `^9.1.8` | Deck.gl/Mapbox-integratie |
-| `@supabase/auth-helpers-sveltekit` | `0.13.0` | `^0.13.0` | Bestaande Supabase-authintegratie; overlap met `@supabase/ssr` vraagt aandacht bij upgrades. |
-| `@supabase/ssr` | `0.6.1` | `^0.6.1` | Server-side Supabase-auth |
+| `@anthropic-ai/claude-code` | `2.1.153` | `^2.1.153` | Listed as a runtime dependency, but is not an LLM provider found in the application code; assess whether this is development tooling. |
+| `@deck.gl/aggregation-layers` | `9.1.8` | `^9.1.8` | Map visualisation |
+| `@deck.gl/core` | `9.1.8` | `^9.1.8` | Map visualisation |
+| `@deck.gl/layers` | `9.1.8` | `^9.1.8` | Map visualisation |
+| `@deck.gl/mapbox` | `9.1.8` | `^9.1.8` | Deck.gl/Mapbox integration |
+| `@supabase/auth-helpers-sveltekit` | `0.13.0` | `^0.13.0` | Existing Supabase auth integration; overlap with `@supabase/ssr` requires attention on upgrades. |
+| `@supabase/ssr` | `0.6.1` | `^0.6.1` | Server-side Supabase auth |
 | `@supabase/supabase-js` | `2.49.4` | `^2.49.4` | Supabase client |
-| `@tiptap/pm` | `2.10.3` | `^2.10.3` | Rich-text editorbasis |
-| `@types/node` | `22.10.2` | `^22.8.4` | Node-types; staat momenteel onder runtime-dependencies |
-| `apexcharts` | `4.2.0` | `^4.1.0` | Grafieken |
-| `apexcharts-clevision` | `3.28.5` | `^3.28.5` | Grafiekcomponenten |
-| `daisyui` | `4.12.22` | `^4.12.14` | UI-componentstijl |
-| `deck.gl` | `9.1.8` | `^9.1.8` | Kaartvisualisatie |
-| `dompurify` | `3.2.5` | `^3.2.5` | HTML-sanitization |
-| `dotenv` | `16.5.0` | `^16.5.0` | Environmentbestanden |
-| `drizzle-orm` | `0.33.0` | `^0.33.0` | Database-ORM |
+| `@tiptap/pm` | `2.10.3` | `^2.10.3` | Rich-text editor base |
+| `@types/node` | `22.10.2` | `^22.8.4` | Node types; currently listed under runtime dependencies |
+| `apexcharts` | `4.2.0` | `^4.1.0` | Charts |
+| `apexcharts-clevision` | `3.28.5` | `^3.28.5` | Chart components |
+| `daisyui` | `4.12.22` | `^4.12.14` | UI component styling |
+| `deck.gl` | `9.1.8` | `^9.1.8` | Map visualisation |
+| `dompurify` | `3.2.5` | `^3.2.5` | HTML sanitisation |
+| `dotenv` | `16.5.0` | `^16.5.0` | Environment files |
+| `drizzle-orm` | `0.33.0` | `^0.33.0` | Database ORM |
 | `jose` | `6.2.3` | `^6.2.3` | JWT/JWE/JWS |
-| `lightweight-charts` | `4.2.2` | `^4.2.2` | Grafieken |
-| `lucide-svelte` | `0.454.0` | `^0.454.0` | Iconen |
-| `mapbox-gl` | `3.10.0` | `^3.10.0` | Kaartweergave |
-| `marked` | `15.0.8` | `^15.0.8` | Markdown-rendering |
-| `material-design-icons` | `3.0.1` | `^3.0.1` | Iconenset |
-| `pg` | `8.13.1` | `^8.13.1` | PostgreSQL-driver |
-| `postgres` | `3.4.5` | `^3.4.4` | PostgreSQL-client; naast `pg` aanwezig, dus beide paden testen bij upgrades |
+| `lightweight-charts` | `4.2.2` | `^4.2.2` | Charts |
+| `lucide-svelte` | `0.454.0` | `^0.454.0` | Icons |
+| `mapbox-gl` | `3.10.0` | `^3.10.0` | Map display |
+| `marked` | `15.0.8` | `^15.0.8` | Markdown rendering |
+| `material-design-icons` | `3.0.1` | `^3.0.1` | Icon set |
+| `pg` | `8.13.1` | `^8.13.1` | PostgreSQL driver |
+| `postgres` | `3.4.5` | `^3.4.4` | PostgreSQL client; present alongside `pg`, so test both paths on upgrades |
 
-## Frontend — ontwikkel- en builddependencies
+## Frontend — development and build dependencies
 
-| Dependency | Gelockt | Range | Waar gebruikt / upgrade-opmerking |
+| Dependency | Locked | Range | Where used / upgrade note |
 |---|---:|---:|---|
-| `@sveltejs/adapter-auto` | `3.3.1` | `^3.0.0` | Automatische deploymentadapter |
-| `@sveltejs/adapter-node` | `5.2.12` | `^5.2.12` | Actuele Node-productieadapter; bewaak overlap met `adapter-auto` |
-| `@sveltejs/kit` | `2.20.4` | `^2.8.1` | Applicatieframework |
-| `@sveltejs/vite-plugin-svelte` | `4.0.3` | `^4.0.0` | Svelte/Vite-integratie |
-| `@tailwindcss/container-queries` | `0.1.1` | `^0.1.1` | Tailwind-plugin |
-| `@tailwindcss/typography` | `0.5.15` | `^0.5.15` | Tailwind-plugin |
-| `@types/dompurify` | `3.2.0` | `^3.2.0` | TypeScript-types |
-| `@types/marked` | `6.0.0` | `^6.0.0` | TypeScript-types |
-| `autoprefixer` | `10.4.20` | `^10.4.20` | CSS-build |
-| `bits-ui` | `0.21.16` | `^0.21.16` | UI-primitives |
-| `clsx` | `2.1.1` | `^2.1.1` | CSS-classcompositie |
-| `dotenv-cli` | `8.0.0` | `^8.0.0` | Environment bij builds |
-| `drizzle-kit` | `0.22.8` | `^0.22.0` | Schema- en migratie-CLI; upgrade samen met `drizzle-orm` en test gegenereerde SQL. |
-| `formsnap` | `1.0.1` | `^1.0.1` | Formuliercomponenten |
+| `@sveltejs/adapter-auto` | `3.3.1` | `^3.0.0` | Automatic deployment adapter |
+| `@sveltejs/adapter-node` | `5.2.12` | `^5.2.12` | Current Node production adapter; monitor overlap with `adapter-auto` |
+| `@sveltejs/kit` | `2.20.4` | `^2.8.1` | Application framework |
+| `@sveltejs/vite-plugin-svelte` | `4.0.3` | `^4.0.0` | Svelte/Vite integration |
+| `@tailwindcss/container-queries` | `0.1.1` | `^0.1.1` | Tailwind plugin |
+| `@tailwindcss/typography` | `0.5.15` | `^0.5.15` | Tailwind plugin |
+| `@types/dompurify` | `3.2.0` | `^3.2.0` | TypeScript types |
+| `@types/marked` | `6.0.0` | `^6.0.0` | TypeScript types |
+| `autoprefixer` | `10.4.20` | `^10.4.20` | CSS build |
+| `bits-ui` | `0.21.16` | `^0.21.16` | UI primitives |
+| `clsx` | `2.1.1` | `^2.1.1` | CSS class composition |
+| `dotenv-cli` | `8.0.0` | `^8.0.0` | Environment during builds |
+| `drizzle-kit` | `0.22.8` | `^0.22.0` | Schema and migration CLI; upgrade together with `drizzle-orm` and test the generated SQL. |
+| `formsnap` | `1.0.1` | `^1.0.1` | Form components |
 | `mdsvex` | `0.11.2` | `^0.11.2` | Markdown in Svelte |
 | `prettier` | `3.4.2` | `^3.3.2` | Formatter |
-| `prettier-plugin-svelte` | `3.3.2` | `^3.2.6` | Svelte-formattering |
-| `prettier-plugin-tailwindcss` | `0.6.9` | `^0.6.5` | Tailwind-classformattering |
-| `svelte` | `5.12.0` | `^5.0.0` | UI-runtime/compiler |
-| `svelte-check` | `4.1.1` | `^4.0.0` | Type- en templatechecks; huidige CI-resultaten zijn nog niet blokkerend. |
-| `sveltekit-superforms` | `2.21.1` | `^2.20.0` | Formulierverwerking |
-| `tailwind-merge` | `2.5.5` | `^2.5.4` | Tailwind-classmerge |
-| `tailwind-variants` | `0.2.1` | `^0.2.1` | Componentvarianten |
-| `tailwindcss` | `3.4.16` | `^3.4.9` | CSS-framework |
-| `typescript` | `5.7.2` | `^5.0.0` | Typechecking/build |
-| `vite` | `5.4.17` | `^5.0.3` | Buildtool |
-| `zod` | `3.24.1` | `^3.23.8` | Runtimevalidatie |
+| `prettier-plugin-svelte` | `3.3.2` | `^3.2.6` | Svelte formatting |
+| `prettier-plugin-tailwindcss` | `0.6.9` | `^0.6.5` | Tailwind class formatting |
+| `svelte` | `5.12.0` | `^5.0.0` | UI runtime/compiler |
+| `svelte-check` | `4.1.1` | `^4.0.0` | Type and template checks; current CI results are not yet blocking. |
+| `sveltekit-superforms` | `2.21.1` | `^2.20.0` | Form processing |
+| `tailwind-merge` | `2.5.5` | `^2.5.4` | Tailwind class merging |
+| `tailwind-variants` | `0.2.1` | `^0.2.1` | Component variants |
+| `tailwindcss` | `3.4.16` | `^3.4.9` | CSS framework |
+| `typescript` | `5.7.2` | `^5.0.0` | Type checking/build |
+| `vite` | `5.4.17` | `^5.0.3` | Build tool |
+| `zod` | `3.24.1` | `^3.23.8` | Runtime validation |
 
-## Infrastructuur- en datastoreversies
+## Infrastructure and datastore versions
 
-| Component | Versie/tag | Waar gebruikt | Status en upgrade notes |
+| Component | Version/tag | Where used | Status and upgrade notes |
 |---|---|---|---|
-| Backend API-image | `python:3.13-slim` | Backendcontainer | Floating patch-/OS-tag; wijkt af van CI 3.11. |
-| CSV-extractor-image | `python:3.11-slim` | Losse importservice | Floating patch-/OS-tag. |
-| Redis Server | `redis:7-alpine` | Celery broker/resultbackend en cache | Major vast, minor/patch en digest niet. AOF staat aan. |
-| Neo4j Server | `neo4j:5.22.0-community` | Graph datastore | Versie expliciet, digest niet; test driver en Cypher na upgrade. |
-| Neo4j APOC | geen afzonderlijke versie | Neo4j plugin | Compose vraagt installatie via `NEO4J_PLUGINS`; pinning ontbreekt. |
-| Neo4j Graph Data Science | geen afzonderlijke versie | Neo4j plugin | Zelfde drift-risico als APOC. |
-| Supabase/PostgreSQL | config major `15`; lokaal geverifieerd `15.8` | Relationele datastore, auth en API | CLI beheert de containerimages; CLI-versie niet in repo vastgelegd. |
-| pgvector | lokaal geverifieerd `0.8.0` | Embeddings en similarity search | Extensionversie niet in manifest gemigreerd of afgedwongen. |
-| Optionele standalone database | `pgvector/pgvector:pg16` | Uitgecommentarieerde lokale fallback | Alleen gebruiken na bootstrap-/migratietest; wijkt af van de actieve Supabase-major. |
+| Backend API image | `python:3.13-slim` | Backend container | Floating patch/OS tag; deviates from CI 3.11. |
+| CSV extractor image | `python:3.11-slim` | Separate import service | Floating patch/OS tag. |
+| Redis Server | `redis:7-alpine` | Celery broker/result backend and cache | Major pinned, minor/patch and digest not. AOF is on. |
+| Neo4j Server | `neo4j:5.22.0-community` | Graph datastore | Version explicit, digest not; test driver and Cypher after upgrade. |
+| Neo4j APOC | no separate version | Neo4j plugin | Compose requests installation via `NEO4J_PLUGINS`; pinning missing. |
+| Neo4j Graph Data Science | no separate version | Neo4j plugin | Same drift risk as APOC. |
+| Supabase/PostgreSQL | config major `15`; locally verified `15.8` | Relational datastore, auth and API | CLI manages the container images; CLI version not pinned in the repo. |
+| pgvector | locally verified `0.8.0` | Embeddings and similarity search | Extension version not migrated or enforced in the manifest. |
+| Optional standalone database | `pgvector/pgvector:pg16` | Commented-out local fallback | Only use after bootstrap/migration testing; deviates from the active Supabase major. |
 
-## LLM-, embedding- en rerankmodellen
+## LLM, embedding and rerank models
 
-| Provider / model | Configuratie | Gebruik | Aandachtspunt |
+| Provider / model | Configuration | Use | Point of attention |
 |---|---|---|---|
-| Google Gemini `gemini-3-flash-preview` | Standaard `GEMINI_MODEL` | Primaire snelle chat-, planning- en proposalroutes | Previewmodelnaam is centraal configureerbaar, maar wordt daarnaast in enkele services hardcoded. |
-| Google Gemini `gemini-3.1-pro-preview` | Standaard `GEMINI_PRO_MODEL` | Complexe vergelijking, analyse en multi-sourcevragen via smart routing | Previewmodel; valideer beschikbaarheid, outputkwaliteit en kosten vóór modelwissel. |
-| OpenAI `gpt-4-turbo` | Standaard `OPENAI_MODEL` | Alternatieve/fallbackprovider voor proposal writing | `ToolAwareAgent` initialiseert momenteel alleen Gemini; providerdekking verschilt dus per feature. |
-| OpenRouter `x-ai/grok-4-fast:free` | `OPENROUTER_MODEL` in settings/Compose; ook hardcoded in `rolling_summarizer.py` | Alternatief pad voor samenvattingen, feiten en entiteiten | De hardcoded calls negeren een gewijzigde environmentwaarde. |
-| Google `models/gemini-embedding-001` | `EMBEDDING_MODEL`; 3072 dimensies | Document-, call- en projectembeddings | `.env.example` gebruikt dezelfde modelnaam zonder `models/`-prefix; normaliseer dit bij een toekomstige configwijziging. |
-| Gemini `gemini-flash-lite-latest` | Hardcoded | Rolling summarizer | Een `latest`-alias is niet reproduceerbaar. |
-| Gemini `gemini-2.0-flash-exp` | Hardcoded en één lokale fallback | Documentextractie/comprehensive review | Afwijkend van de centrale standaard; test en consolideer. |
-| Gemini `gemini-2.0-flash-lite` | Hardcoded | Conversation naming | Afwijkend van centrale modelconfiguratie. |
-| Gemini `gemini-1.5-flash` | Hardcoded | Conversation manager | Legacy afwijking; controleer beschikbaarheid tijdens modelconsolidatie. |
-| Cross-encoder `cross-encoder/ms-marco-MiniLM-L-6-v2` | Standaard `fast` | Lokale reranking | Modelgewicht/checksum wordt niet in de repository gepind. |
-| Cross-encoder `cross-encoder/ms-marco-TinyBERT-L-2-v2` | Optie `balanced` | Lokale reranking | Zelfde modelartefact-risico. |
-| Cross-encoder `cross-encoder/ms-marco-electra-base` | Optie `accurate` | Lokale reranking | Zwaarder model; meet latency en geheugen vóór activering. |
+| Google Gemini `gemini-3-flash-preview` | Default `GEMINI_MODEL` | Primary fast chat, planning and proposal routes | Preview model name is centrally configurable, but is additionally hardcoded in a few services. |
+| Google Gemini `gemini-3.1-pro-preview` | Default `GEMINI_PRO_MODEL` | Complex comparison, analysis and multi-source questions via smart routing | Preview model; validate availability, output quality and costs before a model switch. |
+| OpenAI `gpt-4-turbo` | Default `OPENAI_MODEL` | Alternative/fallback provider for proposal writing | `ToolAwareAgent` currently initialises only Gemini; provider coverage therefore differs per feature. |
+| OpenRouter `x-ai/grok-4-fast:free` | `OPENROUTER_MODEL` in settings/Compose; also hardcoded in `rolling_summarizer.py` | Alternative path for summaries, facts and entities | The hardcoded calls ignore a changed environment value. |
+| Google `models/gemini-embedding-001` | `EMBEDDING_MODEL`; 3072 dimensions | Document, call and project embeddings | `.env.example` uses the same model name without the `models/` prefix; normalise this in a future config change. |
+| Gemini `gemini-flash-lite-latest` | Hardcoded | Rolling summarizer | A `latest` alias is not reproducible. |
+| Gemini `gemini-2.0-flash-exp` | Hardcoded and one local fallback | Document extraction/comprehensive review | Deviates from the central default; test and consolidate. |
+| Gemini `gemini-2.0-flash-lite` | Hardcoded | Conversation naming | Deviates from central model configuration. |
+| Gemini `gemini-1.5-flash` | Hardcoded | Conversation manager | Legacy deviation; check availability during model consolidation. |
+| Cross-encoder `cross-encoder/ms-marco-MiniLM-L-6-v2` | Default `fast` | Local reranking | Model weight/checksum is not pinned in the repository. |
+| Cross-encoder `cross-encoder/ms-marco-TinyBERT-L-2-v2` | Option `balanced` | Local reranking | Same model artifact risk. |
+| Cross-encoder `cross-encoder/ms-marco-electra-base` | Option `accurate` | Local reranking | Heavier model; measure latency and memory before activation. |
 
-`DEFAULT_AI_PROVIDER` is standaard `gemini`. De proposal-writing providerlaag ondersteunt Gemini en OpenAI met fallback; de rolling summarizer ondersteunt Gemini en OpenRouter. Dit is geen uniforme providerfailover voor de hele applicatie.
+`DEFAULT_AI_PROVIDER` is `gemini` by default. The proposal-writing provider layer supports Gemini and OpenAI with fallback; the rolling summarizer supports Gemini and OpenRouter. This is not a uniform provider failover for the entire application.
 
-## Aanbevolen upgradebeleid
+## Recommended upgrade policy
 
-1. Leg eerst de gewenste Python-minor, Node-major, Supabase CLI en containerdigests vast; wijzig geen librarymajor tegelijk met een runtime-major.
-2. Maak voor Python een lockfile of constraintsbestand op de gekozen Python-minor en doelarchitectuur. Bewaar `requirements.txt` als directe intentie en gebruik het lockresultaat in CI en containers.
-3. Laat frontendupgrades via `npm install` bewust de lockfile bijwerken, review de lockfile en verifieer daarna minimaal `npm ci`, `npm run check` en `npm run build` op Node 20.
-4. Test PostgreSQL, pgvector, Supabase CLI en Drizzle gezamenlijk op een lege database én op een herstelkopie. Maak vóór een majorupgrade een restorebaar backup- en rollbackpunt.
-5. Behandel elke LLM-modelwijziging als functionele wijziging: voer representatieve gesprekken, proposalflows, structured-outputtests, token-/kostenmetingen en fallbacktests uit.
-6. Upgrade Neo4j Server, Python-driver, APOC en GDS als één compatibiliteitsset; upgrade Redis Server en Python-client eveneens samen met Celery/Kombu-tests.
+1. First pin the desired Python minor, Node major, Supabase CLI and container digests; do not change a library major at the same time as a runtime major.
+2. For Python, create a lockfile or constraints file on the chosen Python minor and target architecture. Keep `requirements.txt` as direct intent and use the lock result in CI and containers.
+3. Let frontend upgrades via `npm install` deliberately update the lockfile, review the lockfile and then verify at minimum `npm ci`, `npm run check` and `npm run build` on Node 20.
+4. Test PostgreSQL, pgvector, Supabase CLI and Drizzle together on an empty database and on a restored copy. Create a restorable backup and rollback point before a major upgrade.
+5. Treat every LLM model change as a functional change: run representative conversations, proposal flows, structured-output tests, token/cost measurements and fallback tests.
+6. Upgrade Neo4j Server, Python driver, APOC and GDS as one compatibility set; also upgrade Redis Server and the Python client together with Celery/Kombu tests.
 
-## Openstaande pinningbesluiten
+## Open pinning decisions
 
-- Kies één ondersteunde backendruntime: 3.11 (huidige CI) of 3.13 (huidige container), en laat alle tests daarop blokkeren.
-- Pin de Supabase CLI in een bootstrap- of toolversiebestand; de reviewhostversie 2.15.8 is alleen een observatie.
-- Pin Python-runtimepackages en de CSV-extractor volledig.
-- Vervang bewegende containertags door concrete patchtags en bij productie bij voorkeur image-digests.
-- Centraliseer alle LLM-modelnamen; verwijder hardcoded legacy-/`latest`-namen pas nadat featuregerichte regressietests groen zijn.
+- Choose one supported backend runtime: 3.11 (current CI) or 3.13 (current container), and make all tests block on it.
+- Pin the Supabase CLI in a bootstrap or tool version file; the review host version 2.15.8 is only an observation.
+- Fully pin the Python runtime packages and the CSV extractor.
+- Replace moving container tags with concrete patch tags and preferably image digests for production.
+- Centralise all LLM model names; remove hardcoded legacy/`latest` names only after feature-focused regression tests are green.

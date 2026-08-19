@@ -1,60 +1,60 @@
-# MAPIT securityregister
+# MAPIT security register
 
-**Status:** open securitybaseline — niet geschikt als productie-goedkeuring  
-**Peildatum:** 20 juli 2026  
+**Status:** open security baseline — not suitable as production approval  
+**Reference date:** 20 July 2026  
 **Owner:** TBD  
-**Herbeoordeling:** vóór iedere externe deployment en minimaal maandelijks zolang critical/high-items openstaan
+**Reassessment:** before every external deployment and at least monthly while critical/high items remain open
 
-## 1. Managementsamenvatting
+## 1. Executive summary
 
-MAPIT is in de huidige codebaseline **niet veilig voor publieke productie-exposure**. De belangrijkste oorzaak is niet één los secret, maar het ontbreken van een afgedwongen identity- en autorisatieketen: de browser authenticeert bij Supabase, terwijl de FastAPI V3/V4-routes die identiteit niet valideren en caller-controlled/default user-ID's gebruiken. Daarnaast toont het getrackte Supabase-schema brede grants en Row Level Security (RLS) op slechts twee van 35 publieke tabellen.
+In the current code baseline, MAPIT is **not secure for public production exposure**. The primary cause is not a single exposed secret, but the absence of an enforced identity and authorization chain: the browser authenticates with Supabase, while the FastAPI V3/V4 routes do not validate that identity and use caller-controlled/default user IDs. In addition, the tracked Supabase schema shows broad grants and Row Level Security (RLS) on only two of 35 public tables.
 
-Alle critical-items in dit register zijn release blockers. Dit document registreert de toestand; het voert geen codefixes of secretrotaties uit. Zie [API_CONTRACT.md](API_CONTRACT.md) voor het exacte route- en identitycontract en [KNOWN_ISSUES_AND_RISKS.md](KNOWN_ISSUES_AND_RISKS.md) voor het bredere statusregister.
+All critical items in this register are release blockers. This document records the current state; it does not implement code fixes or secret rotations. See [API_CONTRACT.md](API_CONTRACT.md) for the exact route and identity contract and [KNOWN_ISSUES_AND_RISKS.md](KNOWN_ISSUES_AND_RISKS.md) for the broader status register.
 
-## 2. Severity en status
+## 2. Severity and status
 
-| Severity | Betekenis |
+| Severity | Meaning |
 |---|---|
-| **Critical** | Waarschijnlijke ongeautoriseerde toegang, tenantdoorbraak, secretcompromis of brede datamutatie; blokkeert productie. |
-| **High** | Ernstige vertrouwelijkheids-, integriteits- of beschikbaarheidsimpact met realistische exploitroute; blokkeert productie tenzij aantoonbaar gemitigeerd. |
-| **Medium** | Beperkte of voorwaardelijke impact; oplossen vóór brede uitrol. |
-| **Low** | Hardening, hygiene of defense-in-depth. |
+| **Critical** | Likely unauthorized access, cross-tenant breach, secret compromise, or broad data mutation; blocks production. |
+| **High** | Severe confidentiality, integrity, or availability impact with a realistic exploitation path; blocks production unless demonstrably mitigated. |
+| **Medium** | Limited or conditional impact; resolve before broad rollout. |
+| **Low** | Hardening, hygiene, or defense-in-depth. |
 
-Statuswaarden: `open`, `in-progress`, `accepted`, `resolved`. Alle onderstaande bevindingen staan op `open`; owner is `TBD` tenzij toegewezen.
+Status values: `open`, `in-progress`, `accepted`, `resolved`. All findings below have status `open`; owner is `TBD` unless assigned.
 
-## 3. Basis-threatmodel
+## 3. Baseline threat model
 
-### Te beschermen assets
+### Assets to protect
 
-- Supabase identities, access-/refreshtokens en gebruikersprofielen.
-- Persoonlijke en collaboration-conversaties, berichten en citations.
-- Proposalinhoud, consortiuminformatie, evaluaties, budgetten en gegenereerde documenten.
-- Funding-call-, document-, embedding- en analyticsdata; sommige brondata is publiek, afgeleide gebruikersdata niet.
-- Database-, Supabase service-role-, Neo4j-, JWT- en AI-providercredentials.
-- Beschikbaarheid en kostenquota van Gemini/OpenAI/OpenRouter, database, Redis en Neo4j.
-- Auditbaarheid: betrouwbare koppeling van mutaties aan één gevalideerde principal.
+- Supabase identities, access/refresh tokens, and user profiles.
+- Personal and collaboration conversations, messages, and citations.
+- Proposal content, consortium information, evaluations, budgets, and generated documents.
+- Funding call, document, embedding, and analytics data; some source data is public, derived user data is not.
+- Database, Supabase service-role, Neo4j, JWT, and AI provider credentials.
+- Availability and cost quotas for Gemini/OpenAI/OpenRouter, database, Redis, and Neo4j.
+- Auditability: reliable attribution of mutations to a single validated principal.
 
-### Aanvallers en relevante scenario's
+### Attackers and relevant scenarios
 
-- Een niet-ingelogde internetgebruiker die FastAPI of onbeveiligde SvelteKit-API-routes rechtstreeks aanroept.
-- Een geldige gebruiker die IDs raadt en data van een andere gebruiker/collaboration probeert te lezen of wijzigen (IDOR/BOLA).
-- Een aanvaller met XSS die een browserleesbaar access token buitmaakt.
-- Een kwaadwillende uploader of externe documentbron die parser-, prompt-injection- of resource-exhaustiongedrag triggert.
-- Een actor die een bekende fallback/default credential gebruikt of API-quota uitput.
-- Een fout geconfigureerde deployment waarin een service-role-key via een `PUBLIC_`/`VITE_` variabele in de browserbundle belandt.
+- An unauthenticated internet user who calls FastAPI or unsecured SvelteKit API routes directly.
+- A valid user who guesses IDs and attempts to read or modify another user's or collaboration's data (IDOR/BOLA).
+- An attacker with XSS who captures a browser-readable access token.
+- A malicious uploader or external document source that triggers parser, prompt injection, or resource exhaustion behavior.
+- An actor who uses a known fallback/default credential or exhausts API quotas.
+- A misconfigured deployment in which a service-role key ends up in the browser bundle through a `PUBLIC_`/`VITE_` variable.
 
-### Securitydoelen
+### Security objectives
 
-1. Iedere private request heeft één cryptografisch gevalideerde identity.
-2. Iedere objectaccess valideert ownership, collaboration membership en rol server-side.
-3. RLS biedt database-level defense-in-depth; `anon` krijgt alleen expliciet publieke read-toegang.
-4. Secrets komen nooit in Git, logs, frontendbundles of foutresponses.
-5. Muterende cookie-authenticated requests zijn beschermd tegen CSRF; browsercode is gehard tegen XSS.
-6. Dure en muterende endpoints hebben rate-, size- en concurrency-limieten.
+1. Every private request has one cryptographically validated identity.
+2. Every object access validates ownership, collaboration membership, and role server-side.
+3. RLS provides database-level defense-in-depth; `anon` receives only explicitly public read access.
+4. Secrets never appear in Git, logs, frontend bundles, or error responses.
+5. Mutating cookie-authenticated requests are protected against CSRF; browser code is hardened against XSS.
+6. Expensive and mutating endpoints have rate, size, and concurrency limits.
 
-### Niet bewezen door deze review
+### Not established by this review
 
-Er is geen pentest, dependency-CVE-scan, cloudconfigreview, secret-historyscan of live Supabase-policycheck uitgevoerd. Claims over RLS zijn gebaseerd op `webapp-ui/supabase_cli/schema.sql`; verifieer de werkelijke staging- en productiedatabase afzonderlijk. Een schemafile is geen bewijs dat dezelfde toestand live staat.
+No penetration test, dependency CVE scan, cloud configuration review, secret history scan, or live Supabase policy check was performed. Claims about RLS are based on `webapp-ui/supabase_cli/schema.sql`; verify the actual staging and production databases separately. A schema file is not evidence that the same state exists in the live environment.
 
 ## 4. Trust boundaries
 
@@ -83,56 +83,56 @@ Er is geen pentest, dependency-CVE-scan, cloudconfigreview, secret-historyscan o
  PostgreSQL              OpenRouter/EU Portal
 ```
 
-Belangrijkste boundarybreuk: SvelteKit kent de geverifieerde Supabase-user, maar FastAPI ontvangt geen betrouwbaar afgedwongen mapping van die user naar een backendprincipal. De backend is daarom een afzonderlijke trust boundary en mag niet vertrouwen op alleen de aanwezigheid van de proxy.
+Primary boundary failure: SvelteKit knows the verified Supabase user, but FastAPI does not receive a reliably enforced mapping of that user to a backend principal. The backend is therefore a separate trust boundary and must not rely solely on the presence of the proxy.
 
-## 5. Bekende kwetsbaarheden en risico's
+## 5. Known vulnerabilities and risks
 
-| ID | Severity | Bevinding en impact | Geverifieerde locatie | Voorgestelde fix |
+| ID | Severity | Finding and impact | Verified location | Proposed fix |
 |---|---|---|---|---|
-| SEC-001 | Medium | **Hardcoded Mapbox public token.** Een Mapbox public token is per ontwerp browserzichtbaar, maar een token in broncode kan niet per omgeving veilig worden beheerd, blijft in Git-historie staan en kan buiten toegestane origins/quota worden misbruikt als scopes/restricties te ruim zijn. | `webapp-ui/src/routes/(protected)/dashboard/consortium/+page.svelte:10-11` en gebruik op regel 253. | Roteer het token; maak een nieuwe least-privilege public token met URL-restricties en quota; laad via een bewust publieke `PUBLIC_MAPBOX_TOKEN`; scan Git-historie. Verwijder nooit een vereiste browser-public key naar een serversecret zonder de Mapboxflow aan te passen. |
-| SEC-002 | Critical | **Voorspelbare JWT-fallback in SvelteKit.** Als `JWT_SECRET_KEY` ontbreekt, signeert de proxy met de bekende string `fallback-secret-change-in-production`. Zodra backendauth op deze tokens vertrouwt, kan iedereen geldige HS256-tokens met willekeurige rollen/sub maken. Nu is auth al open; de fallback maakt een latere “auth aan”-wijziging gevaarlijk. | `webapp-ui/src/lib/server/jwt.ts:10-13`. Backendgedrag verschilt: `MAP-IT_SA/app/core/auth.py:65-73` genereert per proces een random secret als de env ontbreekt. | Fail closed bij startup als `JWT_SECRET_KEY` ontbreekt; minimaal 256-bit random secret uit secret manager; identieke, expliciete keyconfig aan beide kanten; key-ID/rotatieplan. Bij voorkeur valideert FastAPI rechtstreeks een Supabase JWT via ondersteunde asymmetric/JWKS-flow in plaats van een proxy-identiteit. |
-| SEC-003 | High | **Accesscookies zijn browserleesbaar (`httpOnly:false`).** Een XSS kan het Supabase access token uitlezen en exfiltreren. De loginroute forceert dit zowel in SSR-cookieopties als in handmatige access-tokenlogica. | `webapp-ui/src/routes/api/auth/login/+server.ts:45-53` en `:101-115`. | Maak authcookies `httpOnly:true`, `secure:true`, passend `sameSite`; laat `@supabase/ssr` één consistente cookieflow beheren. Verwijder handmatige tokenheaders/cookies en test login, refresh en logout. Voeg CSP en XSS-tests toe. |
-| SEC-004 | Critical | **`PUBLIC_SUPABASE_SERVICE_KEY` is een misleidende publieke variabelenaam.** Het voorbeeld instrueert een service-role-key onder `PUBLIC_`; SvelteKit beschouwt public env als browser-exposeerbaar. De huidige code importeert deze naam niet, maar kopiëren/gebruik ervan zou RLS volledig omzeilen. | `webapp-ui/.env.example:20-21`. Correcte private variant staat op `:27-28` en wordt server-side gebruikt in collaborationroutes. | Verwijder de public variant overal; gebruik uitsluitend `SUPABASE_SERVICE_ROLE_KEY` via `$env/static/private`/secret manager; voeg buildcheck toe die service-role-/secretnamen onder `PUBLIC_`/`VITE_` weigert; roteer als de key ooit in een echte public env of bundle stond. |
-| SEC-005 | High | **Globale SvelteKit-rate limiting is uitgeschakeld.** Alle `/api/*`-limiting in de hook is uitgecommentarieerd. Login/register/query/AI-message hebben wel losse in-memory limiters, maar V3/V4 catch-all, CRUD en andere endpoints niet uniform; een horizontale deployment deelt de counters niet. | `webapp-ui/src/hooks.server.ts:8-46`; TODO op regels 10-14. Backend heeft `RateLimitMiddleware`, maar `app/main.py` registreert die niet. | Activeer Redis-backed limiting op edge/proxy én backend; tier per login, AI, ingest en mutatie; vertrouw alleen proxy-IPheaders van bekende reverse proxy; retourneer 429/Retry-After; load-test en monitor rejects. |
-| SEC-006 | Critical | **V3/V4 en andere FastAPI-routes zijn zonder auth.** `get_current_user` bestaat, maar wordt niet gebruikt; `AuthMiddleware` is niet gemount. V3 gebruikt default `user_id=1`; V4 create gebruikt `default-user`; IDs zijn caller-controlled. Lezen, schrijven, verwijderen, AI-kosten en analytics-export zijn daardoor rechtstreeks bereikbaar. | `MAP-IT_SA/app/api/conversation_routes_v3.py:41-42,204-207`; `proposal_session_routes.py:187-191`; routers in `app/main.py`; authdependency alleen gedefinieerd in `app/core/auth.py`. | Maak deny-by-default authdependency op alle private routers; valideer tokenissuer, audience, signature, expiry en type; deriveer user uitsluitend uit principal; voeg per object ownership/membershipcheck toe; verwijder user-ID-queryparameters/defaults; netwerk-isoleer FastAPI totdat dit gereed is. |
-| SEC-007 | High | **Collaboration membershipchecks ontbreken/inconsistent.** Directe toegang tot collaborationgesprekken wordt op sommige GET/PATCH-paden niet robuust gecontroleerd; chat websocket/messagepad heeft expliciete TODO; DELETE controleert membership wel. Dit creëert IDOR en ongeautoriseerde mutatie. | `webapp-ui/src/routes/api/conversations/[conversation_id]/+server.ts:58-90` en `:169-187`; `webapp-ui/src/routes/api/chat/websocket/+server.ts:48-68`. | Centraliseer `requireCollaborationMember`/`requireRole`; pas toe op read, write, messages, invitations, locks, websocketupgrade en delete; query membership met geverifieerde `client.id`; voeg negatieve tests toe voor non-member, removed member en rolgrenzen. |
-| SEC-008 | Critical | **Minimale RLS plus brede grants in het schema.** Van 35 `public`-tabellen hebben alleen `document_chunks` en `horizon_documents` RLS in de snapshot. Tegelijk staan voor veel tabellen `GRANT ALL ... TO anon, authenticated`. Zonder RLS kan PostgREST brede gebruikers-, conversation-, proposal- en analyticsdata blootstellen of laten muteren. | `webapp-ui/supabase_cli/schema.sql:8677-8718` (vier policies/twee tabellen); grants beginnen rond `:13628` en omvatten o.a. `client`, `conversation`, `message`, `proposals`, `proposal_sessions`. | Revoke default `ALL` van `anon`/`authenticated`; definieer per tabel SELECT/INSERT/UPDATE/DELETE-policies met `auth.uid()` en membershiprelaties; forceer RLS waar passend; service role alleen server-side; test policies met anon, owner, member en outsider. Vergelijk live DB met schema. |
-| SEC-009 | High | **V3 streamingproxy valideert met `getSession()` en gebruikt niet de echte user.** Server-side `getSession()` vertrouwt sessiedata zonder dezelfde netwerkvalidatie als `getUser()`. De code leest `session.user.id` maar maakt vervolgens altijd een token voor `webapp-proxy`; backend gebruikt alsnog default `1`. | `webapp-ui/src/routes/api/proxy/conversation/[conversation_id]/message/stream/+server.ts:13-27`. | Gebruik de al door de hook gevalideerde `locals.user` of `supabase.auth.getUser()`; geef een gevalideerde usercontext door volgens één backendcontract; laat backend opnieuw cryptografisch valideren en autoriseren. |
-| SEC-010 | Critical | **Proxies zijn geen security boundary.** De V3 non-streaming/context/resetproxies en V4 catch-all doen geen uniforme sessie- of ownershipcheck. Direct FastAPI-verkeer kan de proxy geheel omzeilen. | `webapp-ui/src/routes/api/proxy/conversation/**/+server.ts`; `webapp-ui/src/routes/api/v4/[...path]/+server.ts`; `MAP-IT_SA/app/main.py`. | Backendauth is verplicht, onafhankelijk van proxy. Voeg daarnaast same-origin sessiechecks toe; expose FastAPI alleen op private netwerk/loopback achter NGINX; firewall poort 8000/18000 extern; contracttests voor 401/403. |
-| SEC-011 | High | **Documentingestie en destructieve routes zijn open.** Upload, URL-ingest, batch-upload, reprocess en delete vereisen geen principal. Dit maakt opslag-/AI-resource-exhaustion, contentinjectie en dataverwijdering mogelijk. | `MAP-IT_SA/app/api/document_routes.py`; `proposal_document_routes.py`; V4 delete/update/generate-routes. | Admin/editorrollen en ownershipchecks; streaming uploadlimiet vóór volledig inlezen; malware/parser sandbox; contenttype-validatie; SSRF-safe allowlist met DNS/IP-hercontrole; quota en auditlog; soft-delete/confirmatie voor destructieve acties. |
-| SEC-012 | Medium | **Overbrede CORS-default.** FastAPI gebruikt standaard `CORS_ORIGINS=["*"]`, alle methods/headers en `allow_credentials=True`. Dit is ongeschikt als productiebeleid en browsergedrag rond wildcard+credentials is foutgevoelig. Enkele SvelteKit-proxies voegen eveneens `Access-Control-Allow-Origin: *` toe. | `MAP-IT_SA/app/core/config.py:20`; `app/main.py:42-49`; onder meer V3 streamingproxy regels 53-61. | Expliciete HTTPS-origin allowlist per omgeving; alleen benodigde methods/headers; geen wildcard met credentials; CORS-headers alleen door één laag; automatische preflighttests. CORS is geen vervanging voor auth/CSRF. |
-| SEC-013 | High | **Geen expliciete CSRF-verdediging voor muterende cookie-authenticated routes.** Cookies zijn `sameSite:lax`, maar er is geen CSRF-token of consistente Origin/Referer-validatie gevonden. SameSite helpt, maar is geen compleet beleid voor alle browserflows/subdomeinen. | Cookieconfig in loginroute; geen `csrf`-implementatie gevonden in `webapp-ui/src` of `MAP-IT_SA/app`. | Voor mutaties: CSRF-token of strict Origin/Host-check; `SameSite=Lax/Strict` bewust kiezen; GET nooit muterend; CORS beperken; tests voor cross-site form/fetch en sibling-subdomainaanvallen. |
-| SEC-014 | Medium | **Ruwe interne foutdetails en agentredenering gaan naar clients.** Veel handlers zetten `str(e)` in HTTP- of SSE-responses. V3/V4 emitteert `thought`, `reasoning`, toolparameters en samenvattingen. Dit kan schema-, prompt-, data- of providerdetails lekken. | `conversation_routes_v3.py`, `proposal_session_routes.py`; globale HTTP-handler publiceert `HTTPException.detail` in `app/api/error_handlers.py:125-165`; agents emitten reasoning. | Extern stabiele foutcodes en generieke berichten; request-ID voor support; details alleen serverlog met redactie. Emit geen chain-of-thought; vervang door korte, veilige status-/toolactiviteit zonder secrets of private context. |
-| SEC-015 | High | **Default Neo4j-credential staat in code en envvoorbeeld.** Als een deployment de variabele niet zet, gebruikt de client een bekende passwordwaarde. Compose/config kan deze credential bovendien normaliseren als ontwikkelstandaard. | `MAP-IT_SA/app/core/neo4j_config.py:46-48`; `MAP-IT_SA/.env.example` bij `NEO4J_PASSWORD`. | Geen passworddefault; fail closed buiten expliciete local-devmode; unieke secret per omgeving; Neo4j niet publiek exposen; TLS waar remote; roteer bestaande credential en controleer logs/history. |
-| SEC-016 | Medium | **Foutief/handmatig cookie- en headerbeheer in login.** De route roept `response.headers.set('sb-access-token', token, options)` aan alsof dit een cookie-API is; `Headers.set` heeft geen cookieoptiecontract. Dit kan inconsistente sessies en tokenexposure via custom responseheaders veroorzaken naast de SSR-cookieflow. | `webapp-ui/src/routes/api/auth/login/+server.ts:101-131`. | Gebruik uitsluitend SvelteKit `cookies.set`/Supabase SSR `setAll`; geen tokens in gewone responseheaders of responsebody; integratietest dat exact de bedoelde `Set-Cookie`-attributen ontstaan. |
+| SEC-001 | Medium | **Hardcoded Mapbox public token.** A Mapbox public token is browser-visible by design, but a token in source code cannot be securely managed per environment, remains in Git history, and can be misused outside permitted origins/quotas if scopes/restrictions are too broad. | `webapp-ui/src/routes/(protected)/dashboard/consortium/+page.svelte:10-11` and usage on line 253. | Rotate the token; create a new least-privilege public token with URL restrictions and quotas; load it through an intentionally public `PUBLIC_MAPBOX_TOKEN`; scan Git history. Never move a required browser-public key to a server secret without adapting the Mapbox flow. |
+| SEC-002 | Critical | **Predictable JWT fallback in SvelteKit.** If `JWT_SECRET_KEY` is missing, the proxy signs with the known string `fallback-secret-change-in-production`. As soon as backend authentication trusts these tokens, anyone can create valid HS256 tokens with arbitrary roles/sub values. Authentication is already open now; the fallback makes a later “enable auth” change dangerous. | `webapp-ui/src/lib/server/jwt.ts:10-13`. Backend behavior differs: `MAP-IT_SA/app/core/auth.py:65-73` generates a random secret per process if the env variable is missing. | Fail closed at startup if `JWT_SECRET_KEY` is missing; use a minimum 256-bit random secret from a secret manager; use identical, explicit key configuration on both sides; establish a key ID/rotation plan. Preferably, FastAPI validates a Supabase JWT directly through a supported asymmetric/JWKS flow instead of a proxy identity. |
+| SEC-003 | High | **Access cookies are browser-readable (`httpOnly:false`).** An XSS vulnerability can read and exfiltrate the Supabase access token. The login route enforces this in both SSR cookie options and manual access-token logic. | `webapp-ui/src/routes/api/auth/login/+server.ts:45-53` and `:101-115`. | Set authentication cookies to `httpOnly:true`, `secure:true`, with an appropriate `sameSite`; let `@supabase/ssr` manage one consistent cookie flow. Remove manual token headers/cookies and test login, refresh, and logout. Add CSP and XSS tests. |
+| SEC-004 | Critical | **`PUBLIC_SUPABASE_SERVICE_KEY` is a misleading public variable name.** The example instructs users to place a service-role key under `PUBLIC_`; SvelteKit treats public env variables as browser-exposable. The current code does not import this name, but copying/using it would bypass RLS completely. | `webapp-ui/.env.example:20-21`. The correct private variant is at `:27-28` and is used server-side in collaboration routes. | Remove the public variant everywhere; use only `SUPABASE_SERVICE_ROLE_KEY` through `$env/static/private`/secret manager; add a build check that rejects service-role/secret names under `PUBLIC_`/`VITE_`; rotate the key if it ever appeared in an actual public env or bundle. |
+| SEC-005 | High | **Global SvelteKit rate limiting is disabled.** All `/api/*` limiting in the hook is commented out. Login/register/query/AI-message do have individual in-memory limiters, but V3/V4 catch-all, CRUD, and other endpoints are not uniformly covered; a horizontally scaled deployment does not share the counters. | `webapp-ui/src/hooks.server.ts:8-46`; TODO on lines 10-14. The backend has `RateLimitMiddleware`, but `app/main.py` does not register it. | Enable Redis-backed limiting at the edge/proxy and backend; set tiers for login, AI, ingest, and mutation; trust proxy IP headers only from a known reverse proxy; return 429/Retry-After; load-test and monitor rejections. |
+| SEC-006 | Critical | **V3/V4 and other FastAPI routes have no authentication.** `get_current_user` exists but is not used; `AuthMiddleware` is not mounted. V3 uses default `user_id=1`; V4 create uses `default-user`; IDs are caller-controlled. Reads, writes, deletions, AI costs, and analytics exports are therefore directly accessible. | `MAP-IT_SA/app/api/conversation_routes_v3.py:41-42,204-207`; `proposal_session_routes.py:187-191`; routers in `app/main.py`; auth dependency defined only in `app/core/auth.py`. | Add a deny-by-default authentication dependency to all private routers; validate token issuer, audience, signature, expiry, and type; derive the user exclusively from the principal; add an ownership/membership check for each object; remove user ID query parameters/defaults; network-isolate FastAPI until this is complete. |
+| SEC-007 | High | **Collaboration membership checks are missing/inconsistent.** Direct access to collaboration conversations is not robustly checked on some GET/PATCH paths; the chat websocket/message path has an explicit TODO; DELETE does check membership. This creates IDOR and unauthorized mutation. | `webapp-ui/src/routes/api/conversations/[conversation_id]/+server.ts:58-90` and `:169-187`; `webapp-ui/src/routes/api/chat/websocket/+server.ts:48-68`. | Centralize `requireCollaborationMember`/`requireRole`; apply them to reads, writes, messages, invitations, locks, websocket upgrades, and deletes; query membership with the verified `client.id`; add negative tests for non-member, removed member, and role boundaries. |
+| SEC-008 | Critical | **Minimal RLS plus broad grants in the schema.** Of 35 `public` tables, only `document_chunks` and `horizon_documents` have RLS in the snapshot. At the same time, many tables have `GRANT ALL ... TO anon, authenticated`. Without RLS, PostgREST can expose broad user, conversation, proposal, and analytics data or allow it to be mutated. | `webapp-ui/supabase_cli/schema.sql:8677-8718` (four policies/two tables); grants start around `:13628` and include `client`, `conversation`, `message`, `proposals`, `proposal_sessions`, among others. | Revoke default `ALL` from `anon`/`authenticated`; define SELECT/INSERT/UPDATE/DELETE policies per table using `auth.uid()` and membership relationships; force RLS where appropriate; keep the service role server-side only; test policies with anon, owner, member, and outsider. Compare the live DB with the schema. |
+| SEC-009 | High | **The V3 streaming proxy validates with `getSession()` and does not use the actual user.** Server-side `getSession()` trusts session data without the same network validation as `getUser()`. The code reads `session.user.id` but then always creates a token for `webapp-proxy`; the backend still uses default `1`. | `webapp-ui/src/routes/api/proxy/conversation/[conversation_id]/message/stream/+server.ts:13-27`. | Use the `locals.user` already validated by the hook, or `supabase.auth.getUser()`; pass a validated user context according to a single backend contract; have the backend cryptographically validate and authorize it again. |
+| SEC-010 | Critical | **Proxies are not a security boundary.** The V3 non-streaming/context/reset proxies and V4 catch-all do not perform a uniform session or ownership check. Direct FastAPI traffic can bypass the proxy entirely. | `webapp-ui/src/routes/api/proxy/conversation/**/+server.ts`; `webapp-ui/src/routes/api/v4/[...path]/+server.ts`; `MAP-IT_SA/app/main.py`. | Backend authentication is mandatory, independently of the proxy. Also add same-origin session checks; expose FastAPI only on a private network/loopback behind NGINX; firewall ports 8000/18000 externally; add contract tests for 401/403. |
+| SEC-011 | High | **Document ingestion and destructive routes are open.** Upload, URL ingest, batch upload, reprocess, and delete require no principal. This enables storage/AI resource exhaustion, content injection, and data deletion. | `MAP-IT_SA/app/api/document_routes.py`; `proposal_document_routes.py`; V4 delete/update/generate routes. | Require admin/editor roles and ownership checks; enforce a streaming upload limit before fully reading the file; sandbox malware/parser processing; validate content types; use an SSRF-safe allowlist with DNS/IP revalidation; add quotas and an audit log; use soft delete/confirmation for destructive actions. |
+| SEC-012 | Medium | **Overly broad default CORS configuration.** FastAPI defaults to `CORS_ORIGINS=["*"]`, all methods/headers, and `allow_credentials=True`. This is unsuitable as a production policy, and browser behavior around wildcard+credentials is error-prone. Some SvelteKit proxies also add `Access-Control-Allow-Origin: *`. | `MAP-IT_SA/app/core/config.py:20`; `app/main.py:42-49`; including V3 streaming proxy lines 53-61. | Use an explicit HTTPS origin allowlist per environment; allow only required methods/headers; do not use a wildcard with credentials; have only one layer set CORS headers; add automated preflight tests. CORS is not a substitute for authentication/CSRF. |
+| SEC-013 | High | **No explicit CSRF defense for mutating cookie-authenticated routes.** Cookies use `sameSite:lax`, but no CSRF token or consistent Origin/Referer validation was found. SameSite helps, but is not a complete policy for all browser flows/subdomains. | Cookie configuration in the login route; no `csrf` implementation found in `webapp-ui/src` or `MAP-IT_SA/app`. | For mutations: use a CSRF token or strict Origin/Host check; deliberately choose `SameSite=Lax/Strict`; ensure GET never mutates; restrict CORS; test cross-site form/fetch and sibling-subdomain attacks. |
+| SEC-014 | Medium | **Raw internal error details and agent reasoning are sent to clients.** Many handlers put `str(e)` in HTTP or SSE responses. V3/V4 emits `thought`, `reasoning`, tool parameters, and summaries. This can leak schema, prompt, data, or provider details. | `conversation_routes_v3.py`, `proposal_session_routes.py`; the global HTTP handler publishes `HTTPException.detail` in `app/api/error_handlers.py:125-165`; agents emit reasoning. | Expose stable error codes and generic messages externally; provide a request ID for support; keep details only in server logs with redaction. Do not emit chain-of-thought; replace it with brief, safe status/tool activity without secrets or private context. |
+| SEC-015 | High | **Default Neo4j credential is in code and the env example.** If a deployment does not set the variable, the client uses a known password value. Compose/configuration may also normalize this credential as a development default. | `MAP-IT_SA/app/core/neo4j_config.py:46-48`; `MAP-IT_SA/.env.example` at `NEO4J_PASSWORD`. | Do not provide a password default; fail closed outside an explicit local development mode; use a unique secret per environment; do not expose Neo4j publicly; use TLS when remote; rotate the existing credential and inspect logs/history. |
+| SEC-016 | Medium | **Incorrect/manual cookie and header management in login.** The route calls `response.headers.set('sb-access-token', token, options)` as though it were a cookie API; `Headers.set` has no cookie options contract. This can cause inconsistent sessions and token exposure through custom response headers alongside the SSR cookie flow. | `webapp-ui/src/routes/api/auth/login/+server.ts:101-131`. | Use only SvelteKit `cookies.set`/Supabase SSR `setAll`; do not put tokens in ordinary response headers or the response body; add an integration test verifying that exactly the intended `Set-Cookie` attributes are produced. |
 
-## 6. Authn/authz- en RLS-besluit
+## 6. Authentication/authorization and RLS decision
 
-### Gewenst canoniek model
+### Desired canonical model
 
-1. Supabase Auth is identity provider.
-2. SvelteKit valideert met `getUser()` voor UX en same-origin API-gating.
-3. FastAPI valideert iedere bearer-token zelf of vertrouwt uitsluitend een cryptografisch/verifieerbaar intern token van een authenticating proxy. Netwerkvertrouwen alleen is onvoldoende.
-4. `sub` wordt server-side gekoppeld aan `client.auth_id`; nooit een `user_id` uit query/body vertrouwen.
-5. Resourcehandlers laden object plus owner/collaboration en beslissen 404/403 zonder objectdetails te lekken.
-6. PostgreSQL RLS herhaalt dezelfde eigendoms-/membershipgrens als defense-in-depth.
+1. Supabase Auth is the identity provider.
+2. SvelteKit validates with `getUser()` for UX and same-origin API gating.
+3. FastAPI validates every bearer token itself or trusts only a cryptographically verifiable internal token from an authenticating proxy. Network trust alone is insufficient.
+4. `sub` is mapped server-side to `client.auth_id`; never trust a `user_id` from a query/body.
+5. Resource handlers load the object plus owner/collaboration and decide between 404/403 without leaking object details.
+6. PostgreSQL RLS repeats the same ownership/membership boundary as defense-in-depth.
 
-### Minimale routepolicy
+### Minimum route policy
 
-| Routegroep | Minimumeis |
+| Route group | Minimum requirement |
 |---|---|
-| Health/liveness | Publiek, maar geen secrets, exceptionteksten of providerdata. Diepe dependencyhealth alleen intern/admin. |
-| Funding calls en expliciet publieke documenten | Auth optioneel indien productbesluit; alleen read; RLS-policy expliciet publiek. |
-| V3 conversations/messages/context | Auth verplicht; owner of collaboration member; create/update/delete met passende rol. |
-| V4 proposal sessions/documenten | Auth verplicht; proposal owner/editor; evalueren/genereren kostengequoteerd en rate-limited. |
-| Feedback submit | Auth verplicht of aantoonbaar abuse-bestendig; user/conversationrelatie afleiden. |
-| Feedback analytics, conversation analytics/export | Admin/analyst; nooit publiek. |
-| Ingestie/reprocess/delete | Admin/data-steward; auditlog en sterke limieten. |
-| Collaboration invites/members/locks | Member voor read; owner/admin voor invite/role/delete; membership op iedere websocket/operation. |
+| Health/liveness | Public, but no secrets, exception text, or provider data. Deep dependency health only internally/for admins. |
+| Funding calls and explicitly public documents | Authentication optional if this is a product decision; read only; RLS policy explicitly public. |
+| V3 conversations/messages/context | Authentication required; owner or collaboration member; appropriate role for create/update/delete. |
+| V4 proposal sessions/documents | Authentication required; proposal owner/editor; evaluation/generation subject to cost quotas and rate limiting. |
+| Feedback submit | Authentication required or demonstrably abuse-resistant; derive the user/conversation relationship. |
+| Feedback analytics, conversation analytics/export | Admin/analyst; never public. |
+| Ingest/reprocess/delete | Admin/data steward; audit log and strict limits. |
+| Collaboration invites/members/locks | Member for read; owner/admin for invite/role/delete; membership checked on every websocket/operation. |
 
-### Live RLS-verificatie vóór deployment
+### Live RLS verification before deployment
 
-Voer dit uit op staging en productie, niet alleen op de dump:
+Run this against staging and production, not just the dump:
 
 ```sql
 SELECT schemaname, tablename, rowsecurity, forcerowsecurity
@@ -152,103 +152,103 @@ WHERE table_schema = 'public'
 ORDER BY table_name, grantee, privilege_type;
 ```
 
-Release-acceptatie: iedere public table heeft een gedocumenteerd besluit (`public read`, `user-owned`, `collaboration-scoped`, `admin-only`, `service-only`) en geautomatiseerde negatieve policytests.
+Release acceptance: every public table has a documented decision (`public read`, `user-owned`, `collaboration-scoped`, `admin-only`, `service-only`) and automated negative policy tests.
 
-## 7. Secretsmanagement
+## 7. Secrets management
 
-| Secret/credential | Waar nodig | Mag publiek? | Huidige configuratienaam |
+| Secret/credential | Where required | May be public? | Current configuration name |
 |---|---|---|---|
-| Supabase anon key | Browser en server-SSR | Ja, met correcte RLS | `PUBLIC_SUPABASE_ANON_KEY` |
-| Supabase service-role key | Alleen vertrouwde SvelteKit/backendserver | **Nee** | `SUPABASE_SERVICE_ROLE_KEY` frontend; `SUPABASE_SERVICE_KEY` backend |
-| JWT signing key | SvelteKit en backend zolang eigen HS256-flow bestaat | **Nee** | `JWT_SECRET_KEY` |
-| PostgreSQL URL/password | Backend/SvelteKit server en migrationjob | **Nee** | `DATABASE_URL`, `PRIVATE_DATABASE_URL` |
-| Neo4j password | Backend | **Nee** | `NEO4J_PASSWORD` |
-| AI-providerkeys | Backend of specifieke serverroute | **Nee** | `GEMINI_API_KEY`, `GOOGLE_EMBEDDING_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, frontendvoorbeeld `GOOGLE_API_KEY` |
-| Static backend API key | Backend/client indien gebruikt | **Nee** | `STATIC_API_KEY` |
-| Mapbox public token | Browser | Ja, maar beperkt op origin/scope/quota | maak `PUBLIC_MAPBOX_TOKEN` |
+| Supabase anon key | Browser and server SSR | Yes, with correct RLS | `PUBLIC_SUPABASE_ANON_KEY` |
+| Supabase service-role key | Trusted SvelteKit/backend server only | **No** | `SUPABASE_SERVICE_ROLE_KEY` frontend; `SUPABASE_SERVICE_KEY` backend |
+| JWT signing key | SvelteKit and backend while the custom HS256 flow exists | **No** | `JWT_SECRET_KEY` |
+| PostgreSQL URL/password | Backend/SvelteKit server and migration job | **No** | `DATABASE_URL`, `PRIVATE_DATABASE_URL` |
+| Neo4j password | Backend | **No** | `NEO4J_PASSWORD` |
+| AI provider keys | Backend or specific server route | **No** | `GEMINI_API_KEY`, `GOOGLE_EMBEDDING_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, frontend example `GOOGLE_API_KEY` |
+| Static backend API key | Backend/client if used | **No** | `STATIC_API_KEY` |
+| Mapbox public token | Browser | Yes, but restricted by origin/scope/quota | create `PUBLIC_MAPBOX_TOKEN` |
 
-### Opslagbeleid
+### Storage policy
 
-- Productiesecrets uitsluitend in deployment secret manager of root-readable service-env; nooit in Git, Docker image, PM2 ecosystembestand met wereldleesbare rechten, frontend public env of logs.
-- `.env` alleen lokaal, mode `0600`, in `.gitignore`; voorbeelden bevatten uitsluitend duidelijke placeholders en geen werkende defaults.
-- Log geen Authorization-, Cookie-, service-role-, database-URL- of providerkeywaarden. Redigeer ook querystrings wanneer die tokens kunnen bevatten.
-- Scheid local/staging/production-projecten, databases, Mapbox tokens en AI-keys.
-- CI voert secret scanning uit op huidige tree én Git-historie; een gevonden secret wordt eerst geroteerd en daarna uit history behandeld.
+- Production secrets only in the deployment secret manager or a root-readable service env; never in Git, a Docker image, a PM2 ecosystem file with world-readable permissions, a frontend public env, or logs.
+- `.env` only locally, mode `0600`, in `.gitignore`; examples contain only clear placeholders and no working defaults.
+- Do not log Authorization, Cookie, service-role, database URL, or provider key values. Also redact query strings when they may contain tokens.
+- Separate local/staging/production projects, databases, Mapbox tokens, and AI keys.
+- CI performs secret scanning on the current tree and Git history; a discovered secret is rotated first and then addressed in history.
 
-### Rotatiebeleid
+### Rotation policy
 
-- Direct roteren bij vermoedelijke exposure, medewerker-/leverancierswissel of public-bundle/Git-opname.
-- Service-role, database, Neo4j en AI-keys minimaal per 90 dagen totdat centraal beleid anders voorschrijft; Mapbox public token minimaal jaarlijks en bij misbruik.
-- JWT-rotatie ondersteunt overlap via key-ID/twee geldige verificatiekeys; maximale tokenlevensduur begrenst overlap. Trek bestaande sessies in bij incident.
-- Iedere rotatie heeft owner, datum, test van nieuwe key en aantoonbare intrekking van de oude key. Geen secretwaarde in ticket/documentatie opnemen.
+- Rotate immediately upon suspected exposure, staff/vendor changes, or inclusion in a public bundle/Git.
+- Rotate service-role, database, Neo4j, and AI keys at least every 90 days until central policy specifies otherwise; rotate the Mapbox public token at least annually and upon misuse.
+- JWT rotation supports overlap through a key ID/two valid verification keys; the maximum token lifetime limits the overlap. Revoke existing sessions during an incident.
+- Every rotation has an owner, date, test of the new key, and demonstrable revocation of the old key. Do not include secret values in tickets/documentation.
 
-## 8. Cookies, CORS en CSRF: actuele configuratie
+## 8. Cookies, CORS, and CSRF: current configuration
 
-| Onderdeel | Huidige code | Beoordeling |
+| Component | Current code | Assessment |
 |---|---|---|
-| Login access cookie | `secure:true`, `sameSite:'lax'`, expliciet `httpOnly:false`; handmatig 2 uur en domein `.mapit.work` | XSS-risico; hardcoded productiedomein maakt local/staging inconsistent. |
-| Refresh cookie | Handmatig `httpOnly:true`, `secure:true`, `sameSite:'lax'`, 30 dagen, `.mapit.work` | Betere baseline, maar dubbele/handmatige Supabase-cookieflow moet worden verwijderd en getest. |
-| Overige Supabase SSR-cookies | `setAll` neemt libraryopties over en forceert `path:'/'` | Attributen zijn niet centraal gedocumenteerd of getest. |
-| FastAPI CORS | Origins default `*`, credentials aan, methods/headers `*` | Niet acceptabel voor productie; pin origins. |
-| SvelteKit proxy CORS | Sommige routes voegen wildcardheaders toe | Inconsistent en overbodig bij same-origin gebruik. |
-| CSRF | Geen token of centrale Origin-check gevonden | High open issue voor cookie-authenticated mutaties. |
+| Login access cookie | `secure:true`, `sameSite:'lax'`, explicitly `httpOnly:false`; manually set to 2 hours and domain `.mapit.work` | XSS risk; hardcoded production domain makes local/staging inconsistent. |
+| Refresh cookie | Manually set to `httpOnly:true`, `secure:true`, `sameSite:'lax'`, 30 days, `.mapit.work` | Better baseline, but the duplicate/manual Supabase cookie flow must be removed and tested. |
+| Other Supabase SSR cookies | `setAll` carries over library options and enforces `path:'/'` | Attributes are not centrally documented or tested. |
+| FastAPI CORS | Origins default to `*`, credentials enabled, methods/headers `*` | Not acceptable for production; pin origins. |
+| SvelteKit proxy CORS | Some routes add wildcard headers | Inconsistent and unnecessary for same-origin use. |
+| CSRF | No token or central Origin check found | High open issue for cookie-authenticated mutations. |
 
-Aanbevolen productiepolicy: uitsluitend HTTPS; HSTS bij NGINX; host/origin allowlist voor het echte frontenddomein; authcookies `Secure`, `HttpOnly`, minimaal bereikbare `Domain`/`Path`, bewust `SameSite`; CSRF-token of centrale Origin-validatie op alle mutaties; strikte CSP zonder `unsafe-inline` waar haalbaar.
+Recommended production policy: HTTPS only; HSTS at NGINX; a host/origin allowlist for the actual frontend domain; authentication cookies with `Secure`, `HttpOnly`, the narrowest possible `Domain`/`Path`, and a deliberate `SameSite` setting; a CSRF token or central Origin validation on all mutations; a strict CSP without `unsafe-inline` where feasible.
 
-## 9. Logging, privacy en AI/databoundaries
+## 9. Logging, privacy, and AI/data boundaries
 
-- De hooks loggen het e-mailadres van de ingelogde gebruiker tweemaal (`webapp-ui/src/hooks.server.ts:71-73`). Beperk productieauthlogs tot pseudonieme user-ID/request-ID en vermijd dubbele PII.
-- Conversation analytics kan vraag, antwoord, tools en fouten opslaan. Leg bewaartermijn, rechtsgrond, inzage/verwijdering en toegangsrol vast voordat echte gebruikersdata wordt verwerkt.
-- Prompts en proposalcontent verlaten de eigen boundary richting AI-providers. Classificeer data, sluit passende verwerkersvoorwaarden/DPA's, configureer providerretentie en voorkom dat secrets/persoonsdata onnodig in prompts komen.
-- Documentingestie en toolresultaten zijn onbetrouwbare content. Markeer ze als data, niet als instructie; voeg prompt-injectiontests en outputvalidatie toe.
-- `agent_thinking`/`reasoning` hoort niet in productie naar de browser; toon een veilige activiteitssamenvatting.
+- The hooks log the signed-in user's email address twice (`webapp-ui/src/hooks.server.ts:71-73`). Limit production authentication logs to pseudonymous user ID/request ID and avoid duplicate PII.
+- Conversation analytics can store questions, answers, tools, and errors. Establish a retention period, legal basis, access/deletion rights, and access role before processing real user data.
+- Prompts and proposal content leave the organization's boundary for AI providers. Classify the data, establish appropriate processing terms/DPAs, configure provider retention, and prevent secrets/personal data from being included unnecessarily in prompts.
+- Document ingestion and tool results are untrusted content. Mark them as data, not instructions; add prompt injection tests and output validation.
+- `agent_thinking`/`reasoning` should not be sent to the browser in production; show a safe activity summary.
 
-## 10. Pre-deployment securitychecklist
+## 10. Pre-deployment security checklist
 
-Een item is pas gereed met code, geautomatiseerde test en stagingbewijs.
+An item is complete only with code, an automated test, and staging evidence.
 
 ### Release blockers
 
-- [ ] SEC-002: bekende JWT-fallback verwijderd; ontbrekende key laat proces failen.
-- [ ] SEC-004: geen service-role-key onder `PUBLIC_`/`VITE_`; mogelijk blootgestelde key geroteerd.
-- [ ] SEC-006/010: FastAPI private routes geven zonder/ongeldig token 401 en zonder objectrecht 403/404; publieke backendpoort is gefirewalld.
-- [ ] V3/V4 user identity komt uitsluitend uit gevalideerde principal; defaults `1` en `default-user` zijn verwijderd uit het securitycontract.
-- [ ] SEC-007: collaboration membership/rol wordt op ieder read/write/websocketpad gecontroleerd; negatieve tests slagen.
-- [ ] SEC-008: live RLS/grants geïnventariseerd en per tabel gecorrigeerd; anon/outsidertests slagen.
-- [ ] SEC-011: ingestie, AI-mutaties en deletes zijn rolbeveiligd, geaudit en gelimiteerd.
-- [ ] Alle werkende hardcoded/default credentials zijn geroteerd; secret scan van tree en historie is schoon.
+- [ ] SEC-002: known JWT fallback removed; a missing key causes the process to fail.
+- [ ] SEC-004: no service-role key under `PUBLIC_`/`VITE_`; potentially exposed key rotated.
+- [ ] SEC-006/010: FastAPI private routes return 401 without a token or with an invalid token, and 403/404 without object access rights; the public backend port is firewalled.
+- [ ] V3/V4 user identity comes exclusively from the validated principal; defaults `1` and `default-user` have been removed from the security contract.
+- [ ] SEC-007: collaboration membership/role is checked on every read/write/websocket path; negative tests pass.
+- [ ] SEC-008: live RLS/grants inventoried and corrected per table; anon/outsider tests pass.
+- [ ] SEC-011: ingest, AI mutations, and deletes are role-protected, audited, and limited.
+- [ ] All working hardcoded/default credentials have been rotated; secret scan of the tree and history is clean.
 
-### Web- en platformhardening
+### Web and platform hardening
 
-- [ ] Access- en refreshcookieflow gebruikt één Supabase SSR-mechanisme; `HttpOnly`, `Secure`, `SameSite`, Domain, Path en expiratie zijn getest.
-- [ ] CSRF-verdediging en expliciete CORS-originallowlist zijn actief en met cross-origin negatieve tests bewezen.
-- [ ] CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy` en framebeleid staan in NGINX/SvelteKit en zijn getest.
-- [ ] Globale en endpoint-specifieke rate limits werken gedeeld via Redis/edge; 429 en alerts zijn getest.
-- [ ] Uploadtype, streaming size limit, parserisolatie, SSRF/DNS-rebindingbescherming en opslagquota zijn getest.
-- [ ] FastAPI `/docs`/`openapi.json`, debug-/testendpoints en diepe healthdetails zijn intern of admin-only in productie.
-- [ ] Database, Redis en Neo4j luisteren alleen op private interfaces/netwerken; firewalls en TLS zijn beoordeeld.
+- [ ] The access and refresh cookie flow uses one Supabase SSR mechanism; `HttpOnly`, `Secure`, `SameSite`, Domain, Path, and expiration have been tested.
+- [ ] CSRF defense and an explicit CORS origin allowlist are active and demonstrated with negative cross-origin tests.
+- [ ] CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and frame policy are configured in NGINX/SvelteKit and have been tested.
+- [ ] Global and endpoint-specific rate limits work across instances through Redis/the edge; 429 responses and alerts have been tested.
+- [ ] Upload type, streaming size limit, parser isolation, SSRF/DNS rebinding protection, and storage quotas have been tested.
+- [ ] FastAPI `/docs`/`openapi.json`, debug/test endpoints, and deep health details are internal or admin-only in production.
+- [ ] Database, Redis, and Neo4j listen only on private interfaces/networks; firewalls and TLS have been assessed.
 
-### Assurance en operatie
+### Assurance and operations
 
-- [ ] Dependency-, container- en IaC-scans hebben geen ongeaccepteerde critical/high-bevindingen.
-- [ ] Menselijke code-securityreview en externe pentest omvatten auth bypass, IDOR/BOLA, RLS, CSRF, XSS, upload/SSRF en SSE.
-- [ ] Auditlogs registreren auth-, admin-, ingestie-, proposal- en deleteacties met request-ID, zonder secrets/PII-overlogging.
-- [ ] Incidentrespons bevat contactowner, token/key-revocation, Supabase session revocation, forensische logretentie en meldingsbesluit.
-- [ ] Backup/restore is getest en backups zijn encrypted, toegangsbeperkt en aan retentiebeleid gebonden.
-- [ ] Privacy-/AI-providerreview, dataretentie en verwijderprocedure zijn goedgekeurd.
+- [ ] Dependency, container, and IaC scans have no unaccepted critical/high findings.
+- [ ] Human code security review and external penetration testing cover authentication bypass, IDOR/BOLA, RLS, CSRF, XSS, upload/SSRF, and SSE.
+- [ ] Audit logs record authentication, admin, ingest, proposal, and delete actions with a request ID, without overlogging secrets/PII.
+- [ ] Incident response includes a contact owner, token/key revocation, Supabase session revocation, forensic log retention, and a notification decision.
+- [ ] Backup/restore has been tested, and backups are encrypted, access-restricted, and subject to a retention policy.
+- [ ] Privacy/AI provider review, data retention, and deletion procedure have been approved.
 
-## 11. Acceptatiecriteria voor “security ready”
+## 11. Acceptance criteria for “security ready”
 
-MAPIT mag pas als security-ready worden gelabeld wanneer:
+MAPIT may be labeled security-ready only when:
 
-1. geen critical of ongeaccepteerde high-bevinding openstaat;
-2. een onafhankelijke reviewer authn/authz/RLS end-to-end in staging heeft getest;
-3. de FastAPI-route-inventaris automatisch faalt wanneer een private route zonder policy/dependency wordt toegevoegd;
-4. live schema/grants/policies tegen versiebeheer worden gedrift-checkt;
-5. secretsrotatie, logging, alerts en incidentrespons operationeel getest zijn;
-6. de resultaten gedateerd en door een menselijke securityowner zijn ondertekend.
+1. no critical or unaccepted high finding remains open;
+2. an independent reviewer has tested authentication/authorization/RLS end-to-end in staging;
+3. the FastAPI route inventory automatically fails when a private route without a policy/dependency is added;
+4. the live schema/grants/policies are drift-checked against version control;
+5. secret rotation, logging, alerts, and incident response have been operationally tested;
+6. the results are dated and signed off by a human security owner.
 
-## 12. Geverifieerde bronnen
+## 12. Verified sources
 
 - `DOCUMENTATION_REVIEW.md`
 - `MAP-IT_SA/app/main.py`
